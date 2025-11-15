@@ -12,7 +12,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
- #include <fcntl.h>
+#include <fcntl.h>
+#include <functional>
+#include <sys/epoll.h>
 /*
     打印日志功能
 */
@@ -351,8 +353,119 @@ public:
     void NonBlock()
     {
         int flag;
-        flag = fcntl(_sockfd,F_GETFL,0);
+        flag = fcntl(_sockfd, F_GETFL, 0);
         flag |= O_NONBLOCK;
-        fcntl(_sockfd,F_SETFL,flag);
+        fcntl(_sockfd, F_SETFL, flag);
     }
+};
+class Channel
+{
+private:
+    int _fd;
+    uint32_t _event;  // 当前需要监控的事件
+    uint32_t _revent; // 当前触发的事件
+    EventLoop *_loop;
+    using EventCallBack = std::function<void()>;
+    EventCallBack _read_callback;
+    EventCallBack _write_callback;
+    EventCallBack _error_callback;
+    EventCallBack _close_callback;
+    EventCallBack _event_callback;
+
+public:
+    Channel(EventLoop *loop, int fd) : _fd(fd), _event(0), _revent(0), _loop(loop)
+    {
+    }
+    int Getfd()
+    {
+        return _fd;
+    }
+    // 获取当前触发的事件
+    uint32_t Events()
+    {
+        return _event;
+    }
+    EventCallBack SetReadCallBack(const EventCallBack &cb) { _read_callback = cb; }
+    EventCallBack SetReadCallBack(const EventCallBack &cb) { _write_callback = cb; }
+    EventCallBack SetReadCallBack(const EventCallBack &cb) { _error_callback = cb; }
+    EventCallBack SetReadCallBack(const EventCallBack &cb) { _close_callback = cb; }
+    EventCallBack SetReadCallBack(const EventCallBack &cb) { _event_callback = cb; }
+
+    // 是否监控了可读
+    bool ReadAble()
+    {
+        return (_event & EPOLLIN);
+    }
+    // 是否监控了可写
+    bool WriteAble()
+    {
+        return (_event & EPOLLOUT);
+    }
+    // 启动读事件监控
+    void EnableRead()
+    {
+        _event |= EPOLLIN;
+        Update();
+    }
+    // 启动写事件监控
+    void EnableWrite()
+    {
+        _event |= EPOLLOUT;
+        Update();
+    }
+    // 关闭读事件监控
+    void CloseRead()
+    {
+        _event &= ~EPOLLIN;
+        Update();
+    }
+    // 关闭写事件监控
+    void CloseWrite()
+    {
+        _event &= ~EPOLLOUT;
+        Update();
+    }
+    // 关闭所有监控
+    void CloseAll()
+    {
+        _event = 0;
+        Update();
+    }
+    // 移除监控
+    void Remove();
+    // 事件处理
+    void HandleEvent()
+    {
+        if ((_revent & EPOLLIN) || (_revent & EPOLLRDHUP) || (_revent & EPOLLPRI))
+        {
+            /*不管任何事件，都调用的回调函数*/
+            if (_read_callback)
+                _read_callback();
+        }
+        /*有可能会释放连接的操作事件，一次只处理一个*/
+        if (_revent & EPOLLOUT)
+        {
+            if (_write_callback)
+                _write_callback();
+        }
+        else if (_revent & EPOLLERR)
+        {
+            if (_error_callback)
+                _error_callback(); // 一旦出错，就会释放连接，因此要放到前边调用任意回调
+        }
+        else if (_revent & EPOLLHUP)
+        {
+            if (_close_callback)
+                _close_callback();
+        }
+        if (_event_callback)
+            _event_callback();
+    }
+    void Update();
+};
+// 更新操作
+
+
+class EventLoop
+{
 };
