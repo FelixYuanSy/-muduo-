@@ -17,6 +17,9 @@
 #include <sys/epoll.h>
 #include <unordered_map>
 #include <memory>
+#include <thread>
+#include <sys/eventfd.h>
+#include <mutex>
 /*
     打印日志功能
 */
@@ -645,4 +648,122 @@ public:
 
 class EventLoop
 {
+private:
+    using Func = std::function<void()>;
+    std::thread::id _thread_id; // 判断是否在同一线程内
+    int _event_fd;              // 用来唤醒IO导致的阻塞
+    Poller _poller;              // 监控模块
+    std::vector<Func> _task;    // 任务队列
+    std::mutex _mutex;
+    std::unique_ptr<Channel> _event_channel;
+
+public:
+    static int CreateEventFd()
+    {
+        int fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+        if (fd < 0)
+        {
+            ERR_LOG("Create EventFd Failed");
+            abort();
+        }
+        return fd;
+    }
+    void ReadEventfd()
+    {
+        uint64_t val = 0;
+        int ret = read(_event_fd, &val, sizeof(val));
+        if (ret < 0)
+        {
+            if (errno == EAGAIN | errno == EINTR)
+            {
+                return;
+            }
+            ERR_LOG("Read EventFd Failed");
+            abort();
+        }
+        return;
+    }
+    void WakeUpEventFd()
+    {
+        uint64_t val = 1;
+        int ret = write(_event_fd,&val,sizeof(val));
+        if (ret < 0) {
+                if (errno == EINTR) {
+                    return;
+                }
+                ERR_LOG("READ EVENTFD FAILED!");
+                abort();
+            }
+            return ;
+    }
+
+public:
+    EventLoop() : _thread_id(std::this_thread::get_id()),
+                  _event_fd(CreateEventFd()),
+                  _event_channel(new Channel(this, _event_fd))
+    {
+        // 需要跨线程唤醒机制,防止epoll_wait进行阻塞中
+        _event_channel->SetReadCallBack(std::bind(&EventLoop::ReadEventfd, this));
+        _event_channel->EnableRead();
+    }
+    // 判断实行的任务是否在同一线程中
+    void RunInLoop(const Func &cb)
+    {
+        if (IsInLoop())
+        {
+            return cb();
+        }
+        return QueueInLoop(cb);
+    }
+    // 判断当前线程是否是EventLoop对应线程
+    bool IsInLoop()
+    {
+        return _thread_id == std::this_thread::get_id();
+    }
+    // 把不是同一线程的任务放入任务队列
+    void QueueInLoop(const Func &cb)
+    {
+        {
+            std::unique_lock<std::mutex> _lock(_mutex);
+            _task.push_back(cb);
+        }
+        WakeUpEventFd();
+    }
+    void UpdateEvent(Channel *channel) // 添加,修改描述符监控
+    {
+        return _poller.UpdateEvent(channel);
+
+    }
+
+    void RemoveEvent(Channel *channel) // 移除事件监控
+    {
+        return _poller.RemoveEvent(channel);
+    }
+    void RunAllTask()                // 执行任务队列全部任务
+    {
+        std::vector<Func> Func;
+        {
+            std::unique_lock<std::mutex> _lock(_mutex);
+            Func.swap(_task);
+        }
+        for(auto &f : Func)
+        {
+            f();
+        }
+        return;
+    }
+    void Start()                       // 封转流程添加监控->就绪事件处理->执行任务队列任务
+    {
+        while(1)
+        {
+            std::vector<Channel*> actives;
+            _poller.Poll(&actives);
+            for(auto &it : actives)
+            {
+                it->HandleEvent();
+            }
+            RunAllTask();
+
+        }
+    }
 };
