@@ -383,9 +383,13 @@ public:
         return _fd;
     }
     // 获取当前触发的事件
-    uint32_t Events()
+    uint32_t GetEvents()
     {
         return _event;
+    }
+    void SetREvent(uint32_t event)
+    {
+        _revent = event;
     }
     EventCallBack SetReadCallBack(const EventCallBack &cb) { _read_callback = cb; }
     EventCallBack SetReadCallBack(const EventCallBack &cb) { _write_callback = cb; }
@@ -465,6 +469,97 @@ public:
     }
     void Update();
 };
+#define MAX_EPOLLEVENTS 1024
+class Poller
+{
+private:
+    int _epid;
+    struct epoll_event _evs[MAX_EPOLLEVENTS];
+    std::unordered_map<int, Channel *> _channels; // 进行已经监控的数据管理
+
+private:
+    void Update(Channel *channel, int op)
+    {
+        struct epoll_event ev;
+        int fd = channel->Getfd();
+        ev.data.fd = fd;
+        ev.events = channel->GetEvents();
+        int ret = epoll_ctl(_epid, op, fd, &ev);
+        if (ret < 0)
+        {
+            ERR_LOG("EPOLLCTL Failed");
+        }
+        return;
+    }
+    bool HasChannel(Channel *channel)
+    {
+        auto it = _channels.find(channel->Getfd());
+        if (it == _channels.end())
+        {
+            return false;
+        }
+        return true;
+    }
+
+public:
+    Poller() // op传给epoll_ctl函数
+    {
+        _epid = epoll_create(MAX_EPOLLEVENTS);
+        if (_epid < 0)
+        {
+            ERR_LOG("Create epoll_id Failed");
+            abort();
+        }
+    }
+    // 添加/修改监控事件
+    void UpdateEvent(Channel *channel)
+    {
+        bool ret = HasChannel(channel);
+        if (ret == false)
+        {
+            // 把当前channel传入_channels
+            _channels.insert(std::make_pair(channel->Getfd(), channel));
+
+            return Update(channel, EPOLL_CTL_ADD);
+        }
+
+        return Update(channel, EPOLL_CTL_MOD);
+    }
+
+    // 删除事件
+    void RemoveEvent(Channel *channel)
+    {
+        auto it = _channels.find(channel->Getfd());
+        if (it != _channels.end())
+        {
+            _channels.erase(it);
+        }
+        Update(channel, EPOLL_CTL_DEL);
+    }
+
+    // 开始监控
+    void Poll(std::vector<Channel *> *actives)
+    {
+        int nfds = epoll_wait(_epid, _evs, MAX_EPOLLEVENTS, -1); //-1阻塞等待
+        if (nfds < 0)
+        {
+            if (errno == EINTR)
+            {
+                return;
+            }
+            ERR_LOG("EPOLL WAIT ERROR:%s\n", strerror(errno));
+            abort(); // 退出程序
+        }
+        for (int i = 0; i < nfds; i++)
+        {
+            auto it = _channels.find(_evs[i].data.fd);
+            assert(it != _channels.end());
+            it->second->SetREvent(_evs[i].events); // 设置实际就绪的事件
+            actives->push_back(it->second);
+        }
+        return;
+    }
+};
 
 using TaskFunc = std::function<void()>;    // 用来传入定时任务
 using ReleaseFunc = std::function<void()>; // 用来删除定时器对象信息
@@ -508,33 +603,32 @@ private:
     void RemoveTimer(uint64_t id)
     {
         auto it = _timers.find(id);
-        if(it != _timers.end())
+        if (it != _timers.end())
         {
             _timers.erase(it);
         }
     }
-public:
-    TimerWheel():_tick(0),_capacity(60),_wheel(_capacity)
-    {
 
+public:
+    TimerWheel() : _tick(0), _capacity(60), _wheel(_capacity)
+    {
     }
 
     void TimerAdd(uint64_t id, uint32_t timeout, const TaskFunc &cb)
     {
-        PtrTask pt(new TimerTask(id,timeout,cb)); 
-        pt->SetRelease(std::bind(RemoveTimer,this,id));
-        int pos = (_tick + timeout)%_capacity;
+        PtrTask pt(new TimerTask(id, timeout, cb));
+        pt->SetRelease(std::bind(RemoveTimer, this, id));
+        int pos = (_tick + timeout) % _capacity;
         _wheel[pos].push_back(pt);
         _timers[id] = WeakTask(pt);
-        
     }
 
     void TimerRefresh(uint64_t id)
     {
         auto it = _timers.find(id);
-        if(it == _timers.end())
+        if (it == _timers.end())
         {
-            return;     //没找到任务,代表无法刷新
+            return; // 没找到任务,代表无法刷新
         }
         PtrTask pt = it->second.lock();
         int delaytime = pt->GetDelayTime();
@@ -544,11 +638,10 @@ public:
 
     void Runtick()
     {
-        _tick = (_tick + 1) % _capacity;    //每次走一个时间点
-        _wheel[_tick].clear();              //调用clear清除当前时间点上的任务,任务的析构函数会让任务自己运行
+        _tick = (_tick + 1) % _capacity; // 每次走一个时间点
+        _wheel[_tick].clear();           // 调用clear清除当前时间点上的任务,任务的析构函数会让任务自己运行
     }
 };
-
 
 class EventLoop
 {
