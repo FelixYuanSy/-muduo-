@@ -574,7 +574,7 @@ private:
     uint32_t _timeout;    // 定时任务超时时间
     TaskFunc _task_cb;    // 定时器要执行的任务
     ReleaseFunc _release; // 用来删除timerwheel里定时器对象
-    bool cancel;          //用来解除定时任务 
+    bool cancel;          // 用来解除定时任务
 
 public:
     TimerTask(uint64_t id, uint32_t timeout, const TaskFunc &task_cb) : _id(id), _timeout(timeout), _task_cb(task_cb)
@@ -582,7 +582,8 @@ public:
     }
     ~TimerTask()
     {
-        if(cancel == false)_task_cb();
+        if (cancel == false)
+            _task_cb();
         _release();
     }
     void SetRelease(const ReleaseFunc &cb)
@@ -642,7 +643,7 @@ private:
     int ReadTimerFd()
     {
         uint64_t times;
-        int ret = read(_timer_fd, &times, 8); //读取超时的次数
+        int ret = read(_timer_fd, &times, 8); // 读取超时的次数
         if (ret < 0)
         {
             ERR_LOG("Read TimerFd Failed");
@@ -656,17 +657,17 @@ private:
         _wheel[_tick].clear();           // 调用clear清除当前时间点上的任务,任务的析构函数会让任务自己运行
     }
 
-    //封装每秒执行到期任务
+    // 封装每秒执行到期任务
     void OnTime()
     {
         int times = ReadTimerFd();
-        for(int i = 0; i< times;i++)
+        for (int i = 0; i < times; i++)
         {
             RunTimerTask();
         }
     }
 
-        void TimerAddInLoop(uint64_t id, uint32_t timeout, const TaskFunc &cb)
+    void TimerAddInLoop(uint64_t id, uint32_t timeout, const TaskFunc &cb)
     {
         PtrTask pt(new TimerTask(id, timeout, cb));
         pt->SetRelease(std::bind(RemoveTimer, this, id));
@@ -675,7 +676,7 @@ private:
         _timers[id] = WeakTask(pt);
     }
 
-     void TimerRefreshInLoop(uint64_t id)
+    void TimerRefreshInLoop(uint64_t id)
     {
         auto it = _timers.find(id);
         if (it == _timers.end())
@@ -687,13 +688,13 @@ private:
         int pos = (_tick + delaytime) % _capacity;
         _wheel[pos].push_back(pt);
     }
-    
+
     void TimerCancelInLoop(uint64_t id)
     {
         auto it = _timers.find(id);
-        if(it == _timers.end())
+        if (it == _timers.end())
         {
-            return;   
+            return;
         }
         PtrTask pt = it->second.lock();
         pt->Cancel();
@@ -703,18 +704,29 @@ public:
     TimerWheel(EventLoop *loop) : _tick(0), _capacity(60), _wheel(_capacity), _loop(loop),
                                   _timer_fd(CreateTimerFd()), _timer_channel(new Channel(_loop, _timer_fd))
     {
-        _timer_channel->SetReadCallBack(std::bind(OnTime,this));
+        _timer_channel->SetReadCallBack(std::bind(OnTime, this));
     }
 
     void TimerAdd(uint64_t id, uint32_t timeout, const TaskFunc &cb)
-    {}
+    {
+    }
 
     void TimerRefresh(uint64_t id)
-    {}
+    {
+    }
 
-    void TimerCancel(uint64_t id){}
+    void TimerCancel(uint64_t id) {}
+
+    bool HasTimer(int id)
+    {
+        auto it = _timers.find(id);
+        if (it == _timers.end())
+        {
+            return false;
+        }
+        return true;
+    }
 };
-
 
 class EventLoop
 {
@@ -839,27 +851,27 @@ public:
         }
     }
 
-        void TimerAdd(uint64_t id, uint32_t delay, const TaskFunc &cb) { return _timerwheel.TimerAdd(id, delay, cb); }
-        void TimerRefresh(uint64_t id) { return _timerwheel.TimerRefresh(id); }
-        void TimerCancel(uint64_t id) { return _timerwheel.TimerCancel(id); }
+    void TimerAdd(uint64_t id, uint32_t delay, const TaskFunc &cb) { return _timerwheel.TimerAdd(id, delay, cb); }
+    void TimerRefresh(uint64_t id) { return _timerwheel.TimerRefresh(id); }
+    void TimerCancel(uint64_t id) { return _timerwheel.TimerCancel(id); }
+    bool HasTimer(uint64_t id) { return _timerwheel.HasTimer(id); }
 };
 void TimerWheel::TimerAdd(uint64_t id, uint32_t timeout, const TaskFunc &cb)
 {
-    _loop->RunInLoop(std::bind(&TimerWheel::TimerAddInLoop,this,id,timeout,cb));
+    _loop->RunInLoop(std::bind(&TimerWheel::TimerAddInLoop, this, id, timeout, cb));
 }
 void TimerWheel::TimerCancel(uint64_t id)
 {
-    _loop->RunInLoop(std::bind(&TimerWheel::TimerCancelInLoop,this,id));
+    _loop->RunInLoop(std::bind(&TimerWheel::TimerCancelInLoop, this, id));
 }
 void TimerWheel::TimerRefresh(uint64_t id)
 {
-    _loop->RunInLoop(std::bind(&TimerWheel::TimerRefreshInLoop,this,id));
+    _loop->RunInLoop(std::bind(&TimerWheel::TimerRefreshInLoop, this, id));
 }
-
 
 class Any
 {
-    private:
+private:
     class placeholder
     {
     public:
@@ -895,125 +907,174 @@ public:
     }
     ~Any()
     {
-        if(_content)
+        if (_content)
             delete _content;
     }
     const std::type_info &type()
     {
-        return _content? _content->type():typeid(void);
+        return _content ? _content->type() : typeid(void);
     }
-    template<typename T>
+    template <typename T>
     T *get()
     {
-        assert(if(typeid(T) != _content->type()));
-        return (holder<T>*)_content->_val;
+        assert(if (typeid(T) != _content->type()));
+        return (holder<T> *)_content->_val;
     }
-    Any& swap(Any& other)
+    Any &swap(Any &other)
     {
-        std::swap(_content,other._content);
+        std::swap(_content, other._content);
         return *this;
     }
-    template<typename T>
-    Any& operator =(const T val)
+    template <typename T>
+    Any &operator=(const T val)
     {
         Any(val).swap(*this);
         return *this;
     }
 
-    Any& operator =(Any other)
+    Any &operator=(Any other)
     {
         other.swap(*this);
         return *this;
-
     }
-
 };
-typedef enum {DISCONNECTED, CONNECTING, CONNECTED,DISCONNECTING} ConnStatu;//连接状态
-class Connection; // forward declaration so shared_ptr can be declared before full type
-using PtrConnection = std::shared_ptr<Connection>; //给外界使用的用智能指针
+typedef enum
+{
+    DISCONNECTED,
+    CONNECTING,
+    CONNECTED,
+    DISCONNECTING
+} ConnStatu;                                       // 连接状态
+class Connection;                                  // forward declaration so shared_ptr can be declared before full type
+using PtrConnection = std::shared_ptr<Connection>; // 给外界使用的用智能指针
 class Connection : public std::enable_shared_from_this<Connection>
 {
 
-    private:
-    uint64_t _conn_id;//唯一连接ID
-    bool _enable_inactive_release;//是否启动非活跃销毁释放
-    EventLoop *_loop; //连接关联的EP
-    Channel _channel;  // 管理Channel
-    ConnStatu _statu;//管理连接状态
-    Socket _socket; //管理套接字
+private:
+    uint64_t _conn_id;             // 唯一连接ID
+    bool _enable_inactive_release; // 是否启动非活跃销毁释放
+    EventLoop *_loop;              // 连接关联的EP
+    Channel _channel;              // 管理Channel
+    ConnStatu _statu;              // 管理连接状态
+    Socket _socket;                // 管理套接字
     Buffer _in_buffer;
     Buffer _out_buffer;
-    // Any _context;//请求的接受处理上下文
+    Any _context; // 请求的接受处理上下文
 
-    using ConnectedCallBack = std::function<void(const PtrConnection&)>;
-    using MessageCallBack = std::function<void(const PtrConnection&, Buffer *)>;//对缓冲区进行业务处理
-    using ClosedCallBack = std::function<void(const PtrConnection&)>;
-    using AnyEventCallBack = std::function<void(const PtrConnection&)>;
+    using ConnectedCallBack = std::function<void(const PtrConnection &)>;
+    using MessageCallBack = std::function<void(const PtrConnection &, Buffer *)>; // 对缓冲区进行业务处理
+    using ClosedCallBack = std::function<void(const PtrConnection &)>;
+    using AnyEventCallBack = std::function<void(const PtrConnection &)>;
+    using ServeClosedCallBack = std::function<void(const PtrConnection &)>;
     ConnectedCallBack _connected_callback;
     MessageCallBack _message_callback;
     ClosedCallBack _closed_callback;
     AnyEventCallBack _anyevent_callback;
-    private:
+    ClosedCallBack _server_closed_callback;
 
+private:
     void HandleRead()
     {
         char buf[65536];
-        int ret = _socket.NonBlockRecv(buf,65535);
-        if(ret <0 )
+        int ret = _socket.NonBlockRecv(buf, 65535);
+        if (ret < 0)
         {
             return Shutdown();
         }
-        _in_buffer.WriteAndMove(buf,sizeof(buf));
-        if(_in_buffer.ReadableSize()>0)
+        _in_buffer.WriteAndMove(buf, sizeof(buf));
+        if (_in_buffer.ReadableSize() > 0)
         {
-            return _message_callback(shared_from_this(),&_in_buffer);
+            return _message_callback(shared_from_this(), &_in_buffer);
         }
     }
     void HandleWrite()
     {
-        uint64_t ret = _socket.NonBlockSend(_out_buffer.ReadPosition(),_out_buffer.ReadableSize());
-        if(ret < 0)
+        uint64_t ret = _socket.NonBlockSend(_out_buffer.ReadPosition(), _out_buffer.ReadableSize());
+        if (ret < 0)
         {
-            //如果错误了应该关闭连接,需要查看输入缓冲区是否有内容,清空之后再关闭->输入输出缓冲区不能单独管理吗?
-            if(_in_buffer.ReadableSize() > 0)
+            // 如果错误了应该关闭连接,需要查看输入缓冲区是否有内容,清空之后再关闭->输入输出缓冲区不能单独管理吗?
+            if (_in_buffer.ReadableSize() > 0)
             {
-                _message_callback(shared_from_this(),&_in_buffer);
+                _message_callback(shared_from_this(), &_in_buffer);
             }
-            return  ReleaseInLoop();
+            return ReleaseInLoop();
         }
         _out_buffer.MoveReaderOffset(ret);
-        if(_out_buffer.ReadableSize() == 0)
+        if (_out_buffer.ReadableSize() == 0)
         {
             _channel.CloseWrite();
-            if(_statu == DISCONNECTING)
+            if (_statu == DISCONNECTING)
                 return ReleaseInLoop();
         }
         return;
-
     }
     void HandleClose()
     {
-        
+        if (_in_buffer.ReadableSize() > 0)
+        {
+            _message_callback(shared_from_this(), &_in_buffer);
+        }
+        return ReleaseInLoop();
+    }
+    void HandleError()
+    {
+        HandleClose();
     }
     void HandelEvent()
     {
-        if(_enable_inactive_release == true)
-            {
-                _loop->TimerRefresh(_conn_id);
-            }
-        if(_anyevent_callback)
+        if (_enable_inactive_release == true)
+        {
+            _loop->TimerRefresh(_conn_id);
+        }
+        if (_anyevent_callback)
         {
             _anyevent_callback(shared_from_this());
         }
     }
-    void ReleaseInLoop(){}
+    void EstablishedInLoop()
+    {
+        assert(_statu == CONNECTING); // 当前状态必须是半连接状态
+        _statu = CONNECTED;
+        _channel.EnableRead(); // 启动读监控
+        if (_connected_callback)
+        {
+            _connected_callback(shared_from_this());
+        }
+    }
+    void ReleaseInLoop()
+    {
+        // 修改连接状态
+        _statu = DISCONNECTED;
+        // 移除监控
+        _channel.Remove();
+        // 关闭描述符
+        _socket.Close();
+        // 如果有超时任务,取消超时任务
+        if (_loop->HasTimer(_conn_id))
+        {
+            CancelInactiveReleaseInLoop();
+        }
+        // 调用关闭回调函数
+        _closed_callback(shared_from_this());
+        // 调用服务器关闭回调函数移除信息
+        _server_closed_callback(shared_from_this());
 
-    public:
+    }
+    void EnableInactiveReleaseInLoop(int sec)
+    {
+        
+    }
+    void CancelInactiveReleaseInLoop()
+    {
+
+    }
+
+public:
     Connection();
     ~Connection();
-    void Send(char* data,size_t len);
-    void Shutdown();//关闭连接(检查缓冲区是否还有数据)
+    void Send(char *data, size_t len);
+    void Shutdown(); // 关闭连接(检查缓冲区是否还有数据)
     void EnableInactiveRelease(int timeout);
-    void CancelInactiveRelease(int timeout);
-    void SwitchProtocol(const Any &context,const ConnectedCallBack &conn,const MessageCallBack &message, const ClosedCallBack &closed,AnyEventCallBack &anyevent);
+    void CancelInactiveRelease();
+    void SwitchProtocol(const Any &context, const ConnectedCallBack &conn, const MessageCallBack &message, const ClosedCallBack &closed, AnyEventCallBack &anyevent);
 };
