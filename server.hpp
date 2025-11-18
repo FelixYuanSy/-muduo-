@@ -293,6 +293,7 @@ public:
     ssize_t NonBlockRecv(void *buf, size_t len)
     {
         ssize_t ret = recv(_sockfd, buf, len, MSG_DONTWAIT);
+        return ret;
     }
     // 发送数据
     ssize_t Send(void *buf, size_t len, int flag = 0)
@@ -855,4 +856,58 @@ void TimerWheel::TimerRefresh(uint64_t id)
     _loop->RunInLoop(std::bind(&TimerWheel::TimerRefreshInLoop,this,id));
 }
 
-class
+typedef enum {DISCONNECTED, CONNECTING, CONNECTED,DISCONNECTING} ConnStatu;//连接状态
+class Connection; // forward declaration so shared_ptr can be declared before full type
+using PtrConnection = std::shared_ptr<Connection>; //给外界使用的用智能指针
+class Connection : public std::enable_shared_from_this<Connection>
+{
+
+    private:
+    uint64_t _conn_id;//唯一连接ID
+    bool _enable_inactive_release;//是否启动非活跃销毁释放
+    EventLoop *_loop; //连接关联的EP
+    Channel _channel;  // 管理Channel
+    ConnStatu _statu;//管理连接状态
+    Socket _socket; //管理套接字
+    Buffer _in_buffer;
+    Buffer _out_buffer;
+    // Any _context;//请求的接受处理上下文
+
+    using ConnectedCallBack = std::function<void(const PtrConnection&)>;
+    using MessageCallBack = std::function<void(const PtrConnection&, Buffer *)>;//对缓冲区进行业务处理
+    using ClosedCallBack = std::function<void(const PtrConnection&)>;
+    using AnyEventCallBack = std::function<void(const PtrConnection&)>;
+    ConnectedCallBack _connected_callback;
+    MessageCallBack _message_callback;
+    ClosedCallBack _closed_callback;
+    AnyEventCallBack _anyevent_callback;
+    private:
+
+    void HandleRead()
+    {
+        char buf[65536];
+        int ret = _socket.NonBlockRecv(buf,65535);
+        if(ret <0 )
+        {
+            return Shutdown();
+        }
+        _in_buffer.WriteAndMove(buf,sizeof(buf));
+        if(_in_buffer.ReadableSize()>0)
+        {
+            return _message_callback(shared_from_this(),&_in_buffer);
+        }
+    }
+    void HandleWrite()
+    {
+
+    }
+
+    public:
+    Connection();
+    ~Connection();
+    void Send(char* data,size_t len);
+    void Shutdown();//关闭连接(检查缓冲区是否还有数据)
+    void EnableInactiveRelease(int timeout);
+    void CancelInactiveRelease(int timeout);
+    void SwitchProtocol(const Context &context,const ConnectedCallBack &conn,const MessageCallBack &message, const ClosedCallBack &closed,AnyEventCallBack &anyevent)
+};
