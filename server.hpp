@@ -856,8 +856,79 @@ void TimerWheel::TimerRefresh(uint64_t id)
     _loop->RunInLoop(std::bind(&TimerWheel::TimerRefreshInLoop,this,id));
 }
 
+
+class Any
+{
+    private:
+    class placeholder
+    {
+    public:
+        virtual ~placeholder() {}
+        virtual std::type_info &type() = 0;
+        virtual placeholder *clone() = 0;
+    };
+    template <typename T>
+    class holder : placeholder
+    {
+    public:
+        T _val;
+
+    public:
+        holder(const T &val) : _val(val)
+        {
+        }
+        ~holder() {}
+        const std::type_info &type() override { return typeif(T); }
+        placeholder *clone() override { return new holder(_val); } // 克隆时候直接new一个新的基类返回
+    };
+
+    placeholder *_content;
+
+public:
+    Any() : _content(NULL)
+    {
+    }
+    template <typename T>
+    Any(const T &val) : _content(new holder<T>(val)) {}
+    Any(const Any &other) : _content(other._content ? other._content->clone() : NULL)
+    {
+    }
+    ~Any()
+    {
+        if(_content)
+            delete _content;
+    }
+    const std::type_info &type()
+    {
+        return _content? _content->type():typeid(void);
+    }
+    template<typename T>
+    T *get()
+    {
+        assert(if(typeid(T) != _content->type()));
+        return (holder<T>*)_content->_val;
+    }
+    Any& swap(Any& other)
+    {
+        std::swap(_content,other._content);
+        return *this;
+    }
+    template<typename T>
+    Any& operator =(const T val)
+    {
+        Any(val).swap(*this);
+        return *this;
+    }
+
+    Any& operator =(Any other)
+    {
+        other.swap(*this);
+        return *this;
+
+    }
+
+};
 typedef enum {DISCONNECTED, CONNECTING, CONNECTED,DISCONNECTING} ConnStatu;//连接状态
-class Context; // forward declaration for protocol context used by SwitchProtocol
 class Connection; // forward declaration so shared_ptr can be declared before full type
 using PtrConnection = std::shared_ptr<Connection>; //给外界使用的用智能指针
 class Connection : public std::enable_shared_from_this<Connection>
@@ -929,5 +1000,5 @@ class Connection : public std::enable_shared_from_this<Connection>
     void Shutdown();//关闭连接(检查缓冲区是否还有数据)
     void EnableInactiveRelease(int timeout);
     void CancelInactiveRelease(int timeout);
-    void SwitchProtocol(const Context &context,const ConnectedCallBack &conn,const MessageCallBack &message, const ClosedCallBack &closed,AnyEventCallBack &anyevent)
+    void SwitchProtocol(const Any &context,const ConnectedCallBack &conn,const MessageCallBack &message, const ClosedCallBack &closed,AnyEventCallBack &anyevent);
 };
