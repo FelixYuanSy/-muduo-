@@ -991,6 +991,21 @@ class Connection : public std::enable_shared_from_this<Connection>
         return;
 
     }
+    void HandleClose()
+    {
+        
+    }
+    void HandelEvent()
+    {
+        if(_enable_inactive_release == true)
+            {
+                _loop->TimerRefresh(_conn_id);
+            }
+        if(_anyevent_callback)
+        {
+            _anyevent_callback(shared_from_this());
+        }
+    }
     void ReleaseInLoop(){}
 
     public:
