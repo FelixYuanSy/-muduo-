@@ -857,6 +857,7 @@ void TimerWheel::TimerRefresh(uint64_t id)
 }
 
 typedef enum {DISCONNECTED, CONNECTING, CONNECTED,DISCONNECTING} ConnStatu;//连接状态
+class Context; // forward declaration for protocol context used by SwitchProtocol
 class Connection; // forward declaration so shared_ptr can be declared before full type
 using PtrConnection = std::shared_ptr<Connection>; //给外界使用的用智能指针
 class Connection : public std::enable_shared_from_this<Connection>
@@ -899,8 +900,27 @@ class Connection : public std::enable_shared_from_this<Connection>
     }
     void HandleWrite()
     {
+        uint64_t ret = _socket.NonBlockSend(_out_buffer.ReadPosition(),_out_buffer.ReadableSize());
+        if(ret < 0)
+        {
+            //如果错误了应该关闭连接,需要查看输入缓冲区是否有内容,清空之后再关闭->输入输出缓冲区不能单独管理吗?
+            if(_in_buffer.ReadableSize() > 0)
+            {
+                _message_callback(shared_from_this(),&_in_buffer);
+            }
+            return  ReleaseInLoop();
+        }
+        _out_buffer.MoveReaderOffset(ret);
+        if(_out_buffer.ReadableSize() == 0)
+        {
+            _channel.CloseWrite();
+            if(_statu == DISCONNECTING)
+                return ReleaseInLoop();
+        }
+        return;
 
     }
+    void ReleaseInLoop(){}
 
     public:
     Connection();
