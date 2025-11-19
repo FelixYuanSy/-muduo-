@@ -74,11 +74,7 @@ private:
 
 public:
     Buffer() : _reader_idx(0), _writer_idx(0), _buffer(BUFFER_DEFAULT_SIZE) {}
-    Buffer(Buffer &other)
-    {
-        Write(other.ReadPosition(), other.ReadableSize());
-        MoveReaderOffset(other.ReadableSize());
-    }
+
     char *Begin()
     {
         return &*_buffer.begin(); // 返回空间地址
@@ -153,7 +149,15 @@ public:
         WriteString(data);
         MoveWriterOffset(data.size());
     }
-
+    void WriteBuffer(Buffer &data)
+    {
+        return Write(data.ReadPosition(), data.ReadableSize());
+    }
+    void WriteBufferAndPush(Buffer &data)
+    {
+        WriteBuffer(data);
+        MoveWriterOffset(data.ReadableSize());
+    }
     void Read(void *buf, uint64_t len)
     {
         assert(len <= ReadableSize());
@@ -363,7 +367,12 @@ public:
         flag |= O_NONBLOCK;
         fcntl(_sockfd, F_SETFL, flag);
     }
+    int GetFd()
+    {
+        return _sockfd;
+    }
 };
+class EventLoop;
 class Channel
 {
 private:
@@ -395,11 +404,11 @@ public:
     {
         _revent = event;
     }
-    EventCallBack SetReadCallBack(const EventCallBack &cb) { _read_callback = cb; }
-    EventCallBack SetReadCallBack(const EventCallBack &cb) { _write_callback = cb; }
-    EventCallBack SetReadCallBack(const EventCallBack &cb) { _error_callback = cb; }
-    EventCallBack SetReadCallBack(const EventCallBack &cb) { _close_callback = cb; }
-    EventCallBack SetReadCallBack(const EventCallBack &cb) { _event_callback = cb; }
+    EventCallBack SetReadCallBack(const EventCallBack &cb) { return _read_callback = cb; }
+    EventCallBack SetWriteCallBack(const EventCallBack &cb) { return _write_callback = cb; }
+    EventCallBack SetErrorCallBack(const EventCallBack &cb) { return _error_callback = cb; }
+    EventCallBack SetCloseCallBack(const EventCallBack &cb) { return _close_callback = cb; }
+    EventCallBack SetEventCallBack(const EventCallBack &cb) { return _event_callback = cb; }
 
     // 是否监控了可读
     bool ReadAble()
@@ -670,7 +679,7 @@ private:
     void TimerAddInLoop(uint64_t id, uint32_t timeout, const TaskFunc &cb)
     {
         PtrTask pt(new TimerTask(id, timeout, cb));
-        pt->SetRelease(std::bind(RemoveTimer, this, id));
+        pt->SetRelease(std::bind(&TimerWheel::RemoveTimer, this, id));
         int pos = (_tick + timeout) % _capacity;
         _wheel[pos].push_back(pt);
         _timers[id] = WeakTask(pt);
@@ -704,7 +713,7 @@ public:
     TimerWheel(EventLoop *loop) : _tick(0), _capacity(60), _wheel(_capacity), _loop(loop),
                                   _timer_fd(CreateTimerFd()), _timer_channel(new Channel(_loop, _timer_fd))
     {
-        _timer_channel->SetReadCallBack(std::bind(OnTime, this));
+        _timer_channel->SetReadCallBack(std::bind(&TimerWheel::OnTime, this));
     }
 
     void TimerAdd(uint64_t id, uint32_t timeout, const TaskFunc &cb)
@@ -715,7 +724,10 @@ public:
     {
     }
 
-    void TimerCancel(uint64_t id) {}
+    void TimerCancel(uint64_t id)
+    {
+        TimerCancelInLoop(id);
+    }
 
     bool HasTimer(int id)
     {
@@ -856,18 +868,18 @@ public:
     void TimerCancel(uint64_t id) { return _timerwheel.TimerCancel(id); }
     bool HasTimer(uint64_t id) { return _timerwheel.HasTimer(id); }
 };
-void TimerWheel::TimerAdd(uint64_t id, uint32_t timeout, const TaskFunc &cb)
-{
-    _loop->RunInLoop(std::bind(&TimerWheel::TimerAddInLoop, this, id, timeout, cb));
-}
-void TimerWheel::TimerCancel(uint64_t id)
-{
-    _loop->RunInLoop(std::bind(&TimerWheel::TimerCancelInLoop, this, id));
-}
-void TimerWheel::TimerRefresh(uint64_t id)
-{
-    _loop->RunInLoop(std::bind(&TimerWheel::TimerRefreshInLoop, this, id));
-}
+// void TimerWheel::TimerAdd(uint64_t id, uint32_t timeout, const TaskFunc &cb)
+// {
+//     _loop->RunInLoop(std::bind(&TimerWheel::TimerAddInLoop, this, id, timeout, cb));
+// }
+// void TimerWheel::TimerCancel(uint64_t id)
+// {
+//     _loop->RunInLoop(std::bind(&TimerWheel::TimerCancelInLoop, this, id));
+// }
+// void TimerWheel::TimerRefresh(uint64_t id)
+// {
+//     _loop->RunInLoop(std::bind(&TimerWheel::TimerRefreshInLoop, this, id));
+// }
 
 class Any
 {
@@ -879,7 +891,7 @@ private:
         virtual std::type_info &type() = 0;
         virtual placeholder *clone() = 0;
     };
-    template <typename T>
+    template <class T>
     class holder : placeholder
     {
     public:
@@ -890,7 +902,7 @@ private:
         {
         }
         ~holder() {}
-        const std::type_info &type() override { return typeif(T); }
+        const std::type_info &type() override { return typeid(T); }
         placeholder *clone() override { return new holder(_val); } // 克隆时候直接new一个新的基类返回
     };
 
@@ -914,11 +926,11 @@ public:
     {
         return _content ? _content->type() : typeid(void);
     }
-    template <typename T>
+    template <class T>
     T *get()
     {
-        assert(if (typeid(T) != _content->type()));
-        return (holder<T> *)_content->_val;
+        assert(typeid(T) == _content->type());
+        return &((holder<T> *)_content)->_val;
     }
     Any &swap(Any &other)
     {
@@ -951,7 +963,8 @@ class Connection : public std::enable_shared_from_this<Connection>
 {
 
 private:
-    uint64_t _conn_id;             // 唯一连接ID
+    uint64_t _conn_id; // 唯一连接ID
+    int _sock_fd;
     bool _enable_inactive_release; // 是否启动非活跃销毁释放
     EventLoop *_loop;              // 连接关联的EP
     Channel _channel;              // 管理Channel
@@ -979,7 +992,7 @@ private:
         int ret = _socket.NonBlockRecv(buf, 65535);
         if (ret < 0)
         {
-            return Shutdown();
+            return ShutDownInLoop();
         }
         _in_buffer.WriteAndMove(buf, sizeof(buf));
         if (_in_buffer.ReadableSize() > 0)
@@ -1020,7 +1033,7 @@ private:
     {
         HandleClose();
     }
-    void HandelEvent()
+    void HandleEvent()
     {
         if (_enable_inactive_release == true)
         {
@@ -1058,23 +1071,141 @@ private:
         _closed_callback(shared_from_this());
         // 调用服务器关闭回调函数移除信息
         _server_closed_callback(shared_from_this());
-
+    }
+    void SendInLoop(Buffer buf)
+    {
+        if (_statu == DISCONNECTED)
+        {
+            return;
+        }
+        _out_buffer.WriteBufferAndPush(buf);
+        if (_channel.WriteAble() == false)
+        {
+            _channel.EnableWrite();
+        }
+    }
+    void ShutDownInLoop()
+    {
+        _statu = DISCONNECTING;
+        if (_in_buffer.ReadableSize() > 0)
+        {
+            if (_message_callback)
+                _message_callback(shared_from_this(), &_in_buffer);
+        }
+        if (_out_buffer.ReadableSize() > 0)
+        {
+            if (_channel.WriteAble() == false)
+            {
+                _channel.EnableWrite();
+            }
+            if (_out_buffer.ReadableSize() == 0)
+            {
+                ReleaseInLoop();
+            }
+        }
     }
     void EnableInactiveReleaseInLoop(int sec)
     {
-        
+        _enable_inactive_release = true;
+        if (_loop->HasTimer(_conn_id))
+            _loop->TimerRefresh(_conn_id);
     }
     void CancelInactiveReleaseInLoop()
     {
-
+        _enable_inactive_release = false;
+        if (_loop->HasTimer(_conn_id))
+            _loop->TimerCancel(_conn_id);
+    }
+    void SwitchProtocolInLoop(const Any &context, const ConnectedCallBack &conn, const MessageCallBack &message, const ClosedCallBack &closed, AnyEventCallBack &anyevent)
+    {
+        _context = context;
+        _connected_callback = conn;
+        _message_callback = message;
+        _closed_callback = closed;
+        _anyevent_callback = anyevent;
     }
 
 public:
-    Connection();
-    ~Connection();
-    void Send(char *data, size_t len);
+    Connection(EventLoop *loop, uint64_t conn_id, int sock_fd) : _conn_id(conn_id), _sock_fd(sock_fd),
+                                                                 _enable_inactive_release(false), _loop(loop), _statu(CONNECTING), _socket(_sock_fd),
+                                                                 _channel(loop, _sock_fd)
+    {
+        _channel.SetCloseCallBack(std::bind(&Connection::HandleClose, this));
+        _channel.SetEventCallBack(std::bind(&Connection::HandleEvent, this));
+        _channel.SetReadCallBack(std::bind(&Connection::HandleRead, this));
+        _channel.SetWriteCallBack(std::bind(&Connection::HandleWrite, this));
+        _channel.SetErrorCallBack(std::bind(&Connection::HandleError, this));
+    }
+    ~Connection() {};
+    int GetId() { return _conn_id; }
+    bool Connnected() { return _statu == CONNECTED; }
+    Any *GetContext() { return &_context; }
+    void SetConnectedCallBack(const ConnectedCallBack &cb) { _connected_callback = cb; }
+    void SetMessageCallBack(const MessageCallBack &cb) { _message_callback = cb; }
+    void SetCloseCallBack(const ClosedCallBack &cb) { _closed_callback = cb; }
+    void SetAnyEventCallBack(const AnyEventCallBack &cb) { _anyevent_callback = cb; }
+    void SetServeClosedCallBack(const ServeClosedCallBack &cb) { _server_closed_callback = cb; }
+    void Established()
+    {
+        _loop->RunInLoop(std::bind(&Connection::EstablishedInLoop, this));
+    }
+    void Send(const char *data, size_t len)
+    {
+        Buffer buf;
+        buf.WriteAndMove(data, len);
+        _loop->RunInLoop(std::bind(&Connection::SendInLoop, this, std::move(buf)));//采用move函数直接将buffer类底层vector所有权转移,减少了两次BUffer拷贝.减少开销
+    }
     void Shutdown(); // 关闭连接(检查缓冲区是否还有数据)
-    void EnableInactiveRelease(int timeout);
+    void EnableInactiveRelease(int timeout)
+    {
+        _loop->RunInLoop(std::bind(&Connection::EnableInactiveReleaseInLoop,this,timeout));
+    }
     void CancelInactiveRelease();
     void SwitchProtocol(const Any &context, const ConnectedCallBack &conn, const MessageCallBack &message, const ClosedCallBack &closed, AnyEventCallBack &anyevent);
+};
+
+void Channel::Remove() { return _loop->RemoveEvent(this); }
+void Channel::Update() { return _loop->UpdateEvent(this); }
+
+class Acceptor
+{
+private:
+    Socket _socket;   // 创建套接字
+    EventLoop *_loop; // 对套接字进行监控(留意为什么是指针)
+    Channel _channel; // 对监控进行管理
+
+    using AcceptCallBack = std::function<void(int)>;
+    AcceptCallBack _accept_callback;
+
+private:
+    int CreateServer(int port)
+    {
+        bool ret = _socket.CreateServer(port);
+        assert(ret == true);
+        return _socket.GetFd();
+    }
+    void HandleRead()
+    {
+        int newfd = _socket.Accept();
+        if (newfd < 0)
+        {
+            return;
+        }
+        if (_accept_callback)
+        {
+            _accept_callback(newfd);
+        }
+    }
+
+public:
+    Acceptor(EventLoop *loop, int port) : _loop(loop), _socket(CreateServer(port)), _channel(loop, _socket.GetFd())
+    {
+        _channel.SetReadCallBack(std::bind(&Acceptor::HandleRead, this));
+    }
+    void SetAcceptCallBack(const AcceptCallBack &cb) { _accept_callback = cb; }
+
+    void Listen()
+    {
+        _channel.EnableRead();
+    }
 };
