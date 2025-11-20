@@ -20,6 +20,7 @@
 #include <thread>
 #include <sys/eventfd.h>
 #include <mutex>
+#include <condition_variable>
 /*
     打印日志功能
 */
@@ -300,7 +301,7 @@ public:
         return ret;
     }
     // 发送数据
-    ssize_t Send(void *buf, size_t len, int flag = 0)
+    ssize_t Send(const void *buf, size_t len, int flag = 0)
     {
         ssize_t ret = send(_sockfd, buf, len, flag);
         if (ret < 0)
@@ -1153,12 +1154,12 @@ public:
     {
         Buffer buf;
         buf.WriteAndMove(data, len);
-        _loop->RunInLoop(std::bind(&Connection::SendInLoop, this, std::move(buf)));//采用move函数直接将buffer类底层vector所有权转移,减少了两次BUffer拷贝.减少开销
+        _loop->RunInLoop(std::bind(&Connection::SendInLoop, this, std::move(buf))); // 采用move函数直接将buffer类底层vector所有权转移,减少了两次BUffer拷贝.减少开销
     }
     void Shutdown(); // 关闭连接(检查缓冲区是否还有数据)
     void EnableInactiveRelease(int timeout)
     {
-        _loop->RunInLoop(std::bind(&Connection::EnableInactiveReleaseInLoop,this,timeout));
+        _loop->RunInLoop(std::bind(&Connection::EnableInactiveReleaseInLoop, this, timeout));
     }
     void CancelInactiveRelease();
     void SwitchProtocol(const Any &context, const ConnectedCallBack &conn, const MessageCallBack &message, const ClosedCallBack &closed, AnyEventCallBack &anyevent);
@@ -1166,6 +1167,45 @@ public:
 
 void Channel::Remove() { return _loop->RemoveEvent(this); }
 void Channel::Update() { return _loop->UpdateEvent(this); }
+
+class LoopThread
+{
+private:
+    EventLoop *_loop;
+    std::thread _thread;
+
+    std::mutex _mutex;
+    std::condition_variable _cond;
+
+private:
+    void ThreadEntry()
+    {
+        EventLoop loop;
+        {
+            std::unique_lock<std::mutex> lock(_mutex);
+            _loop = &loop;
+            _cond.notify_all();
+        }
+        loop.Start();
+    }
+
+public:
+    LoopThread() : _loop(NULL), _thread(std::thread(&LoopThread::ThreadEntry, this))
+    {
+    }
+    EventLoop *GetLoop()
+    {
+        EventLoop *loop = NULL;
+        {
+            std::unique_lock<std::mutex> lock(_mutex);
+            // 需要考虑EventLoop还没有构建好的状态:
+            _cond.wait(lock, [&]()
+                       { return _loop != NULL; });
+            loop = _loop;
+        }
+        return loop;
+    }
+};
 
 class Acceptor
 {
