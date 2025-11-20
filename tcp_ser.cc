@@ -1,17 +1,20 @@
 #include "server.hpp"
-EventLoop loop;
-void HandleRead(Channel channel)
-{
-    int fd = channel.Getfd();
-    char buf[1024] = {0};
-    int ret = recv(fd, buf, 1023, 0);
-    if (ret < 0)
-    {
-    }
-}
 
+// void HandleRead(Channel channel)
+// {
+//     int fd = channel.Getfd();
+//     char buf[1024] = {0};
+//     int ret = recv(fd, buf, 1023, 0);
+//     if (ret < 0)
+//     {
+//     }
+// }
+EventLoop base_loop;
+LoopThread loop_thread;
 std::unordered_map<uint64_t, PtrConnection> _conns;
 uint64_t conn_id = 0;
+std::vector<LoopThread> threads(2);
+int next_loop = 0;
 void ConnectionDestroy(const PtrConnection &conn)
 {
     _conns.erase(conn->GetId());
@@ -34,7 +37,8 @@ void NewConnection(int fd)
 {
    
     conn_id++;
-    PtrConnection conn(new Connection(&loop, conn_id, fd));
+    next_loop = (next_loop+1)%2;
+    PtrConnection conn(new Connection(threads[next_loop].GetLoop(), conn_id, fd));
     conn->SetMessageCallBack(std::bind(OnMessage, std::placeholders::_1, std::placeholders::_2));
     conn->SetServeClosedCallBack(std::bind(ConnectionDestroy, std::placeholders::_1));
     conn->SetConnectedCallBack(std::bind(OnConnected, std::placeholders::_1));
@@ -52,12 +56,12 @@ int main()
     // Channel channel(&loop,socket.GetFd());
     // channel.SetReadCallBack(std::bind(Acceptor,&loop,&channel));
     // channel.EnableRead();
-    Acceptor acceptor(&loop,8087);
+    Acceptor acceptor(&base_loop,8087);
     acceptor.SetAcceptCallBack(std::bind(NewConnection,std::placeholders::_1));
 
     while(1)
     {
-        loop.Start();
+        base_loop.Start();
     }
     // socket.Close();
     return 0;
