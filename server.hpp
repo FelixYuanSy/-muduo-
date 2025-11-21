@@ -1207,6 +1207,51 @@ public:
     }
 };
 
+class LoopThreadPool
+{
+    private:
+    int _thread_account;
+    int _next_idx;// 索引
+    EventLoop* _base_loop;
+    std::vector<LoopThread*> _threads;
+    std::vector<EventLoop*> _loop;
+    public:
+    LoopThreadPool(EventLoop *baseloop):_thread_account(0),_next_idx(0),_base_loop(baseloop)
+    {
+
+    }
+    void SetThreadAccount(int account)
+    {
+        _thread_account = account;
+    }
+    void Create()
+    {
+        if(_thread_account > 0)
+        {
+            _threads.resize(_thread_account);
+            _loop.resize(_thread_account);
+            for(int i = 0; i < _thread_account;i++)
+            {
+                _threads[i] = new LoopThread();
+                _loop[i] = _threads[i]->GetLoop();
+            }
+        }
+        return;
+    }
+    EventLoop *NextLoop()
+    {
+        if(_thread_account == 0)
+        {
+            return _base_loop;
+        }
+        else
+        {
+            _next_idx = (_next_idx+1)%_thread_account;
+            return _loop[_next_idx];
+        }
+    }
+};
+
 class Acceptor
 {
 private:
