@@ -3,8 +3,9 @@
 #include <cstdint>
 #include <functional>
 #include <unordered_map>
-#include <vector>
 #include <memory>
+#include <vector>
+
 using TaskFunc = std::function<void()>;    // 用来传入定时任务
 using ReleaseFunc = std::function<void()>; // 用来删除定时器对象信息
 class TimerTask
@@ -60,7 +61,7 @@ public:
 
     void TimerAdd(uint64_t id, uint32_t timeout, const TaskFunc &cb)
     {
-        PtrTask pt(new TimerTask(id,timeout,cb));
+        PtrTask pt(new TimerTask(id,timeout,cb)); 
         pt->SetRelease(std::bind(RemoveTimer,this,id));
         int pos = (_tick + timeout)%_capacity;
         _wheel[pos].push_back(pt);
