@@ -130,7 +130,7 @@ public:
     }
     void Write(const void *data, uint64_t len)
     {
-        if (len = 0)
+        if (len == 0)
             return;
         EnsureWriteSpace(len);
         char *d = (char *)data;
@@ -461,22 +461,26 @@ public:
             /*不管任何事件，都调用的回调函数*/
             if (_read_callback)
                 _read_callback();
+            return;
         }
         /*有可能会释放连接的操作事件，一次只处理一个*/
         if (_revent & EPOLLOUT)
         {
             if (_write_callback)
                 _write_callback();
+            return;
         }
         else if (_revent & EPOLLERR)
         {
             if (_error_callback)
                 _error_callback(); // 一旦出错，就会释放连接，因此要放到前边调用任意回调
+            return;
         }
         else if (_revent & EPOLLHUP)
         {
             if (_close_callback)
                 _close_callback();
+            return;
         }
         if (_event_callback)
             _event_callback();
@@ -991,7 +995,7 @@ private:
     {
         char buf[65536];
         int ret = _socket.NonBlockRecv(buf, 65535);
-        if (ret < 0)
+        if (ret <= 0)
         {
             return ShutDownInLoop();
         }
@@ -1156,7 +1160,10 @@ public:
         buf.WriteAndMove(data, len);
         _loop->RunInLoop(std::bind(&Connection::SendInLoop, this, std::move(buf))); // 采用move函数直接将buffer类底层vector所有权转移,减少了两次BUffer拷贝.减少开销
     }
-    void Shutdown(); // 关闭连接(检查缓冲区是否还有数据)
+    void Shutdown() // 关闭连接(检查缓冲区是否还有数据)
+    {
+        _loop->RunInLoop(std::bind(&Connection::ShutDownInLoop, this));
+    }
     void EnableInactiveRelease(int timeout)
     {
         _loop->RunInLoop(std::bind(&Connection::EnableInactiveReleaseInLoop, this, timeout));
@@ -1337,15 +1344,14 @@ private:
     {
         int id = conn->GetId();
         auto it = _conns.find(id);
-        if(it != _conns.end())
+        if (it != _conns.end())
         {
             _conns.erase(id);
         }
-        
     }
-    void RemoveConnection(const PtrConnection &conn) 
+    void RemoveConnection(const PtrConnection &conn)
     {
-        _baseloop.RunInLoop(std::bind(&TcpServer::RemoveConnectionInLoop,this,conn));
+        _baseloop.RunInLoop(std::bind(&TcpServer::RemoveConnectionInLoop, this, conn));
     }
     void AddTimeInLoop(const TaskFunc &cb, int delay)
     {
@@ -1356,7 +1362,7 @@ private:
 public:
     TcpServer(int port) : _conn_id(0), _port(port), _acceptor(&_baseloop, port), _pool(&_baseloop), _enable_task_release(false)
     {
-        _acceptor.SetAcceptCallBack(std::bind(&TcpServer::NewConnection,this,std::placeholders::_1));
+        _acceptor.SetAcceptCallBack(std::bind(&TcpServer::NewConnection, this, std::placeholders::_1));
         _acceptor.Listen();
     }
     // 设置从属线程数量
