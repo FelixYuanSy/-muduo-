@@ -105,7 +105,7 @@ public:
         }
         return str;
     }
-    //转译字母从16进制变成2进制
+    //算出字母和数字ASKII码
     static char HEXTOI(char c)
     {
         if(c>='0' && c<= '9')
@@ -129,7 +129,8 @@ public:
         {
             if(url[i]=='% ' && (i+2)<url.size())
             {
-                char v1 = url[i+1]
+                char v1 = HEXTOI(url[i+1]);
+                char v2 = HEXTOI(url[i+2]);
             }
         }
     }
