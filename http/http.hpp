@@ -105,7 +105,7 @@ public:
         }
         return str;
     }
-
+    //转译字母从16进制变成2进制
     static char HEXTOI(char c)
     {
         if(c>='0' && c<= '9')
