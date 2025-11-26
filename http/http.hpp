@@ -353,7 +353,7 @@ private:
     std::string _version;                                  // 协议版本
     std::string _path;                                     // 资源路径
     std::string _mathces;                                  // 正则匹配资源路径
-    std::string body;                                      // 正文
+    std::string _body;                                      // 正文
     std::unordered_map<std::string, std::string> _headers; // 查询头部字段
     std::unordered_map<std::string, std::string> _params;  // 查询字符串
 
@@ -416,6 +416,26 @@ public:
             return "";
         }
         return it->second;
+    }
+
+    size_t GetBodyLength()
+    {
+        //需要有Conten_Length 这个Key 才有正文
+        bool ret = HasHeader("Content-Length");
+        if(ret < 0) return 0;
+        std::string clen = GetHeader("Content-Length");
+        return std::stol(clen);
+        
+    }
+
+    //判断是否是短链接
+    bool IsShortConnection()
+    {
+        // 没有Connection字段，或者有Connection但是值是close，则都是短链接，否则就是长连接
+            if (HasHeader("Connection") == true && GetHeader("Connection") == "keep-alive") {
+                return false;
+            }
+            return true;
     }
     
 };
