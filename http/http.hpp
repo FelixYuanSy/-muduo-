@@ -98,40 +98,127 @@ public:
                 str += '+';
                 continue;
             }
-            //其余转化为%HH
+            // 其余转化为%HH
             char tmp[4];
-            snprintf(tmp,4,"%%%02X",c);//%%用来转译为'%',第三个%用来表示后面为数字,0为未满两位数用0补齐第一位,2表示宽度为两位,X表示转换为16进制
-            str+=tmp;
+            snprintf(tmp, 4, "%%%02X", c); //%%用来转译为'%',第三个%用来表示后面为数字,0为未满两位数用0补齐第一位,2表示宽度为两位,X表示转换为16进制
+            str += tmp;
         }
         return str;
     }
-    //算出字母和数字ASKII码
+    // 算出字母和数字ASKII码
     static char HEXTOI(char c)
     {
-        if(c>='0' && c<= '9')
+        if (c >= '0' && c <= '9')
         {
-            return c-'0';
+            return c - '0';
         }
-        if(c>='a' && c<='z')
+        if (c >= 'a' && c <= 'z')
         {
-            return c-'a'+10;
+            return c - 'a' + 10;
         }
-        if(c>='A' && c<= 'Z')
+        if (c >= 'A' && c <= 'Z')
         {
-            return c-'A'+10;
+            return c - 'A' + 10;
         }
         return -1;
     }
     static std::string UrlDecode(const std::string url, bool convert_space_to_plus)
     {
         std::string str;
-        for(int i = 0;i < url.size();i++)
+        for (int i = 0; i < url.size(); i++)
         {
-            if(url[i]=='% ' && (i+2)<url.size())
+            if (url[i] == '%' && (i + 2) < url.size())
             {
-                char v1 = HEXTOI(url[i+1]);
-                char v2 = HEXTOI(url[i+2]);
+                char v1 = HEXTOI(url[i + 1]);
+                char v2 = HEXTOI(url[i + 2]);
+                char v = (v1 * 16) + v2;
+                str += v;
+                i += 2;
+                continue;
             }
+            if (url[i] == ' ' && convert_space_to_plus == true)
+            {
+                str += '+';
+                i += 2;
+                continue;
+            }
+            str += url[i];
         }
+        return str;
     }
+    static std::string StatuDesc(int statu)
+    {
+        std::unordered_map<int, std::string> _statu_msg =
+            {
+                {100, "Continue"},
+                {101, "Switching Protocol"},
+                {102, "Processing"},
+                {103, "Early Hints"},
+                {200, "OK"},
+                {201, "Created"},
+                {202, "Accepted"},
+                {203, "Non-Authoritative Information"},
+                {204, "No Content"},
+                {205, "Reset Content"},
+                {206, "Partial Content"},
+                {207, "Multi-Status"},
+                {208, "Already Reported"},
+                {226, "IM Used"},
+                {300, "Multiple Choice"},
+                {301, "Moved Permanently"},
+                {302, "Found"},
+                {303, "See Other"},
+                {304, "Not Modified"},
+                {305, "Use Proxy"},
+                {306, "unused"},
+                {307, "Temporary Redirect"},
+                {308, "Permanent Redirect"},
+                {400, "Bad Request"},
+                {401, "Unauthorized"},
+                {402, "Payment Required"},
+                {403, "Forbidden"},
+                {404, "Not Found"},
+                {405, "Method Not Allowed"},
+                {406, "Not Acceptable"},
+                {407, "Proxy Authentication Required"},
+                {408, "Request Timeout"},
+                {409, "Conflict"},
+                {410, "Gone"},
+                {411, "Length Required"},
+                {412, "Precondition Failed"},
+                {413, "Payload Too Large"},
+                {414, "URI Too Long"},
+                {415, "Unsupported Media Type"},
+                {416, "Range Not Satisfiable"},
+                {417, "Expectation Failed"},
+                {418, "I'm a teapot"},
+                {421, "Misdirected Request"},
+                {422, "Unprocessable Entity"},
+                {423, "Locked"},
+                {424, "Failed Dependency"},
+                {425, "Too Early"},
+                {426, "Upgrade Required"},
+                {428, "Precondition Required"},
+                {429, "Too Many Requests"},
+                {431, "Request Header Fields Too Large"},
+                {451, "Unavailable For Legal Reasons"},
+                {501, "Not Implemented"},
+                {502, "Bad Gateway"},
+                {503, "Service Unavailable"},
+                {504, "Gateway Timeout"},
+                {505, "HTTP Version Not Supported"},
+                {506, "Variant Also Negotiates"},
+                {507, "Insufficient Storage"},
+                {508, "Loop Detected"},
+                {510, "Not Extended"},
+                {511, "Network Authentication Required"}};
+        auto it = _statu_msg.find(statu);
+        if (it == _statu_msg.end())
+        {
+            return "Unknow the Status Code\n";
+        }
+        return it->second;
+    }
+
+    
 };
