@@ -3,6 +3,7 @@
 #include <vector>
 #include <fstream>
 #include <sys/stat.h>
+#include <regex>
 #include "../server.hpp"
 class Util
 {
@@ -348,12 +349,21 @@ public:
 class HttpRequest
 {
     // 请求方法,URL,查询字符串,协议版本,头部字段,路径正则提取数据,请求正文
+    /*
+        GET /index.html HTTP/1.1
+        Host: 127.0.0.1:8080
+        User-Agent: Mozilla/5.0
+        Accept: /
+        Connection: keep-alive
+        Content-Length: 0
+
+    */
 private:
     std::string _method;                                   // 请求方法
     std::string _version;                                  // 协议版本
     std::string _path;                                     // 资源路径
-    std::string _mathces;                                  // 正则匹配资源路径
-    std::string _body;                                      // 正文
+    std::smatch _mathces;                                  // 正则匹配资源路径
+    std::string _body;                                     // 正文
     std::unordered_map<std::string, std::string> _headers; // 查询头部字段
     std::unordered_map<std::string, std::string> _params;  // 查询字符串
 
@@ -393,7 +403,7 @@ public:
         _params.insert(std::make_pair(key, val));
     }
 
-     bool HasParam(const std::string &key)
+    bool HasParam(const std::string &key)
     {
         auto it = _params.find(key);
         if (it == _params.end())
@@ -420,22 +430,35 @@ public:
 
     size_t GetBodyLength()
     {
-        //需要有Conten_Length 这个Key 才有正文
+        // 需要有Conten_Length 这个Key 才有正文
         bool ret = HasHeader("Content-Length");
-        if(ret < 0) return 0;
+        if (ret < 0)
+            return 0;
         std::string clen = GetHeader("Content-Length");
         return std::stol(clen);
-        
     }
 
-    //判断是否是短链接
+    // 判断是否是短链接
     bool IsShortConnection()
     {
         // 没有Connection字段，或者有Connection但是值是close，则都是短链接，否则就是长连接
-            if (HasHeader("Connection") == true && GetHeader("Connection") == "keep-alive") {
-                return false;
-            }
-            return true;
+        if (HasHeader("Connection") == true && GetHeader("Connection") == "keep-alive")
+        {
+            return false;
+        }
+        return true;
     }
-    
+
+    void Reset()
+    {
+        _method.clear();
+        _path.clear();
+        _version.clear();
+        _body.clear();
+        _headers.clear();
+        _params.clear();
+        std::smatch sm;
+        _mathces.swap(sm);
+
+    }
 };
