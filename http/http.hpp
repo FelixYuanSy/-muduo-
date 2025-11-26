@@ -315,4 +315,12 @@ public:
         if(ret < 0) return false;
         return S_ISREG(st.st_mode);
     }
+
+        static bool IsDirectory(std::string file_name)
+    {
+        struct stat st;
+        int ret = stat(file_name.c_str(),&st);
+        if(ret < 0) return false;
+        return S_ISDIR(st.st_mode);
+    }
 };
