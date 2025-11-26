@@ -4,10 +4,10 @@
 #include <fstream>
 #include <sys/stat.h>
 #include "../server.hpp"
-class util
+class Util
 {
 public:
-    size_t Split(std::string &src, std::string sep, std::vector<std::string> *array)
+    static size_t Split(const std::string &src, std::string sep, std::vector<std::string> *array)
     {
         // 情况1: abc
         // 情况2: abc,,cba
@@ -311,16 +311,36 @@ public:
     static bool IsRegularFile(std::string file_name)
     {
         struct stat st;
-        int ret = stat(file_name.c_str(),&st);
-        if(ret < 0) return false;
+        int ret = stat(file_name.c_str(), &st);
+        if (ret < 0)
+            return false;
         return S_ISREG(st.st_mode);
     }
 
-        static bool IsDirectory(std::string file_name)
+    static bool IsDirectory(std::string file_name)
     {
         struct stat st;
-        int ret = stat(file_name.c_str(),&st);
-        if(ret < 0) return false;
+        int ret = stat(file_name.c_str(), &st);
+        if (ret < 0)
+            return false;
         return S_ISDIR(st.st_mode);
+    }
+    static bool IsValidPath(const std::string &path)
+    {
+        std::vector<std::string> subdir;
+        Split(path, "/", &subdir);
+        int level = 0;
+        for (auto &dir : subdir)
+        {
+            if (dir == "..")
+            {
+                level--;
+                if (level < 0)
+                    return false;
+                continue;
+            }
+            level++;
+        }
+        return true;
     }
 };
