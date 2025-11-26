@@ -344,3 +344,53 @@ public:
         return true;
     }
 };
+
+class HttpRequest
+{
+    // 请求方法,URL,查询字符串,协议版本,头部字段,路径正则提取数据,请求正文
+private:
+    std::string _method;                                   // 请求方法
+    std::string _version;                                  // 协议版本
+    std::string _path;                                     // 资源路径
+    std::string _mathces;                                  // 正则匹配资源路径
+    std::string body;                                      // 正文
+    std::unordered_map<std::string, std::string> _headers; // 查询头部字段
+    std::unordered_map<std::string, std::string> _params;  // 查询字符串
+
+public:
+    void SetHeader(std::string &key, std::string &val)
+    {
+        _headers.insert(std::make_pair(key, val));
+    }
+    // 查看指定的Header是否存在
+    bool HasHeader(const std::string &key)
+    {
+        auto it = _headers.find(key);
+        if (it == _headers.end())
+        {
+            return false;
+        }
+        return true;
+    }
+    // 获取指定的头部字段值
+    std::string GetHeader(const std::string &key)
+    {
+        bool ret = HasHeader(key);
+        if (ret == false)
+        {
+            return "未找到当前头部值\n";
+        }
+        auto it = _headers.find(key);
+        if (it == _headers.end())
+        {
+            return "";
+        }
+        return it->second;
+    }
+
+    void SetParams(std::string &key, std::string &val)
+    {
+        _params.insert(std::make_pair(key, val));
+    }
+    
+};
