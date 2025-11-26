@@ -392,5 +392,30 @@ public:
     {
         _params.insert(std::make_pair(key, val));
     }
+
+     bool HasParam(const std::string &key)
+    {
+        auto it = _params.find(key);
+        if (it == _params.end())
+        {
+            return false;
+        }
+        return true;
+    }
+    // 获取指定的头部字段值
+    std::string GetParams(const std::string &key)
+    {
+        bool ret = HasParam(key);
+        if (ret == false)
+        {
+            return "未找到当前字符值\n";
+        }
+        auto it = _params.find(key);
+        if (it == _params.end())
+        {
+            return "";
+        }
+        return it->second;
+    }
     
 };
