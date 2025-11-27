@@ -459,6 +459,66 @@ public:
         _params.clear();
         std::smatch sm;
         _mathces.swap(sm);
+    }
+};
 
+class HttpResponse
+{
+private:
+    int _statu_code;                                       // 返回的状态码
+    std::string _redirect_url;                             // 重定向url
+    std::string _body;                                     // 返回的body
+    bool _redirect_flag = false;                           // 是否设置了重定向
+    std::unordered_map<std::string, std::string> _headers; // 返回的头部
+
+public:
+    void SetHeader(const std::string &key, const std::string &val)
+    {
+        _headers.insert(std::make_pair(key, val));
+    }
+    // 查看指定的Header是否存在
+    bool HasHeader(const std::string &key)
+    {
+        auto it = _headers.find(key);
+        if (it == _headers.end())
+        {
+            return false;
+        }
+        return true;
+    }
+    // 获取指定的头部字段值
+    std::string GetHeader(const std::string &key)
+    {
+        bool ret = HasHeader(key);
+        if (ret == false)
+        {
+            return "未找到当前头部值\n";
+        }
+        auto it = _headers.find(key);
+        if (it == _headers.end())
+        {
+            return "";
+        }
+        return it->second;
+    }
+    void SetRedirectUrl(const std::string &url, int statu = 302)
+    {
+        _statu_code = statu;
+        _redirect_url = url;
+        _redirect_flag = true;
+    }
+    void SetContent(const std::string &data, const std::string &type = "text/html")
+    {
+        _body = data;
+        SetHeader("Content-Type",type);
+    }
+     bool IsShortConnection()
+    {
+        // 没有Connection字段，或者有Connection但是值是close，则都是短链接，否则就是长连接
+        if (HasHeader("Connection") == true && GetHeader("Connection") == "keep-alive")
+        {
+            return false;
+        }
+        return true;
     }
 };
