@@ -397,7 +397,7 @@ public:
         }
         return it->second;
     }
-//Params用来设置,获取查询字符串
+    // Params用来设置,获取查询字符串
     void SetParams(std::string &key, std::string &val)
     {
         _params.insert(std::make_pair(key, val));
@@ -533,49 +533,80 @@ typedef enum
     RECV_HTTP_BODY,
     RECV_HTTP_OVER
 } HttpRecevStatu;
-
+#define MAX_LINE 8192
 class HttpContext
 {
 private:
     HttpRecevStatu _recv_statu; // 当前处于处理的哪个状态
     HttpRequest _request;       // 已经处理的字段
-    int _resp_status_code;      //应该返回的状态码
+    int _resp_status_code;      // 应该返回的状态码
 
 public:
-    bool ParseHttpUrl(const std::string &line)
+    bool ParseHttpLine(const std::string &line)
     {
         std::smatch matches;
         std::regex e("(GET|HEAD|POST|PUT|DELETE) ([^?]*)(?:\\?(.*))? (HTTP/1\\.[01])(?:\n|\r\n)?", std::regex::icase);
-        bool ret = std::regex_match(line,matches,e);
-        if(ret == false)
+        bool ret = std::regex_match(line, matches, e);
+        if (ret == false)
         {
             _recv_statu = RECV_HTTP_ERROR;
             return false;
         }
-            //0 : GET /EA/login?user=xiaoming&pass=123123 HTTP/1.1
-            //1 : GET
-            //2 : /bitejiuyeke/login
-            //3 : user=xiaoming&pass=123123
-            //4 : HTTP/1.1
+        // 0 : GET /EA/login?user=xiaoming&pass=123123 HTTP/1.1
+        // 1 : GET
+        // 2 : /bitejiuyeke/login
+        // 3 : user=xiaoming&pass=123123
+        // 4 : HTTP/1.1
         _request._method = matches[1];
-        _request._path = Util::UrlDecode(matches[2],false);
+        _request._path = Util::UrlDecode(matches[2], false);
         _request._version = matches[4];
         std::vector<std::string> array;
         std::string source_array = matches[3];
-        Util::Split(source_array,"&",&array);
-        for(auto &it : array)
+        Util::Split(source_array, "&", &array);
+        for (auto &it : array)
         {
             size_t pos = it.find("=");
-            if(pos == std::string::npos)
+            if (pos == std::string::npos)
             {
                 _recv_statu = RECV_HTTP_ERROR;
-                _resp_status_code = 400;//BAD REQUEST
+                _resp_status_code = 400; // BAD REQUEST
                 return false;
             }
-            std::string key = Util::UrlDecode(it.substr(0,pos),true);
+            std::string key = Util::UrlDecode(it.substr(0, pos), true);
             std::string val = Util::UrlDecode(it.substr(pos + 1), true);
-            _request.SetParams(key,val);
+            _request.SetParams(key, val);
         }
+        return true;
+    }
+
+    bool RecevHttpLine(Buffer *buf)
+    {
+        if (_recv_statu != RECV_HTTP_LINE)
+            return false;
+
+        std::string line = buf->GetLineAndPop(); // 从InBuffer传进来->InBuffer怎么输入?
+        // 缓冲区不足一行, 判断缓冲区里的数组是否超出了设定大小,超过了就是false
+        if (line.size() == 0)
+        {
+            if (buf->ReadableSize() > MAX_LINE)
+            {
+                _recv_statu = RECV_HTTP_ERROR;
+                _resp_status_code = 414; // URL TOO LONG
+                return false;
+            }
+        }
+        if (line.size() > MAX_LINE)
+        {
+            _recv_statu = RECV_HTTP_ERROR;
+            _resp_status_code = 414; // URL TOO LONG
+            return false;
+        }
+        bool ret = ParseHttpLine(line);
+        if(ret == false)
+        {
+            return false;
+        }
+        _recv_statu = RECV_HTTP_HEAD;
         return true;
     }
 };
