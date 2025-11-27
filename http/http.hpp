@@ -358,7 +358,7 @@ class HttpRequest
         Content-Length: 0
 
     */
-private:
+public:
     std::string _method;                                   // 请求方法
     std::string _version;                                  // 协议版本
     std::string _path;                                     // 资源路径
@@ -397,7 +397,7 @@ public:
         }
         return it->second;
     }
-
+//Params用来设置,获取查询字符串
     void SetParams(std::string &key, std::string &val)
     {
         _params.insert(std::make_pair(key, val));
@@ -412,7 +412,7 @@ public:
         }
         return true;
     }
-    // 获取指定的头部字段值
+
     std::string GetParams(const std::string &key)
     {
         bool ret = HasParam(key);
@@ -510,14 +510,71 @@ public:
     void SetContent(const std::string &data, const std::string &type = "text/html")
     {
         _body = data;
-        SetHeader("Content-Type",type);
+        SetHeader("Content-Type", type);
     }
-     bool IsShortConnection()
+    bool IsShortConnection()
     {
         // 没有Connection字段，或者有Connection但是值是close，则都是短链接，否则就是长连接
         if (HasHeader("Connection") == true && GetHeader("Connection") == "keep-alive")
         {
             return false;
+        }
+        return true;
+    }
+};
+
+// HttpContext类用来防止传来的request是不完整的,需要先传入buffer里面进行处理再传入Request
+// 需要定义一个处理状态enum类来查看处理到什么状态,下一步进行哪种处理
+typedef enum
+{
+    RECV_HTTP_ERROR,
+    RECV_HTTP_LINE,
+    RECV_HTTP_HEAD,
+    RECV_HTTP_BODY,
+    RECV_HTTP_OVER
+} HttpRecevStatu;
+
+class HttpContext
+{
+private:
+    HttpRecevStatu _recv_statu; // 当前处于处理的哪个状态
+    HttpRequest _request;       // 已经处理的字段
+    int _resp_status_code;      //应该返回的状态码
+
+public:
+    bool ParseHttpUrl(const std::string &line)
+    {
+        std::smatch matches;
+        std::regex e("(GET|HEAD|POST|PUT|DELETE) ([^?]*)(?:\\?(.*))? (HTTP/1\\.[01])(?:\n|\r\n)?", std::regex::icase);
+        bool ret = std::regex_match(line,matches,e);
+        if(ret == false)
+        {
+            _recv_statu = RECV_HTTP_ERROR;
+            return false;
+        }
+            //0 : GET /EA/login?user=xiaoming&pass=123123 HTTP/1.1
+            //1 : GET
+            //2 : /bitejiuyeke/login
+            //3 : user=xiaoming&pass=123123
+            //4 : HTTP/1.1
+        _request._method = matches[1];
+        _request._path = Util::UrlDecode(matches[2],false);
+        _request._version = matches[4];
+        std::vector<std::string> array;
+        std::string source_array = matches[3];
+        Util::Split(source_array,"&",&array);
+        for(auto &it : array)
+        {
+            size_t pos = it.find("=");
+            if(pos == std::string::npos)
+            {
+                _recv_statu = RECV_HTTP_ERROR;
+                _resp_status_code = 400;//BAD REQUEST
+                return false;
+            }
+            std::string key = Util::UrlDecode(it.substr(0,pos),true);
+            std::string val = Util::UrlDecode(it.substr(pos + 1), true);
+            _request.SetParams(key,val);
         }
         return true;
     }
