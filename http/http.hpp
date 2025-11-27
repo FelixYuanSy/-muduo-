@@ -532,12 +532,12 @@ typedef enum
     RECV_HTTP_HEAD,
     RECV_HTTP_BODY,
     RECV_HTTP_OVER
-} HttpRecevStatu;
+} HttpRecvStatu;
 #define MAX_LINE 8192
 class HttpContext
 {
 private:
-    HttpRecevStatu _recv_statu; // 当前处于处理的哪个状态
+    HttpRecvStatu _recv_statu; // 当前处于处理的哪个状态
     HttpRequest _request;       // 已经处理的字段
     int _resp_status_code;      // 应该返回的状态码
 
@@ -579,7 +579,7 @@ public:
         return true;
     }
 
-    bool RecevHttpLine(Buffer *buf)
+    bool RecvHttpLine(Buffer *buf)
     {
         if (_recv_statu != RECV_HTTP_LINE)
             return false;
@@ -657,5 +657,49 @@ public:
             std::string val = line.substr(pos + 2);
             _request.SetHeader(key, val);
             return true;
+        }
+         bool RecvHttpBody(Buffer *buf) {
+            if (_recv_statu != RECV_HTTP_BODY) return false;
+            //1. 获取正文长度
+            size_t content_length = _request.GetBodyLength();
+            if (content_length == 0) {
+                //没有正文，则请求接收解析完毕
+                _recv_statu = RECV_HTTP_OVER;
+                return true;
+            }
+            //2. 当前已经接收了多少正文,其实就是往  _request._body 中放了多少数据了
+            size_t real_len = content_length - _request._body.size();//实际还需要接收的正文长度
+            //3. 接收正文放到body中，但是也要考虑当前缓冲区中的数据，是否是全部的正文
+            //  3.1 缓冲区中数据，包含了当前请求的所有正文，则取出所需的数据
+            if (buf->ReadableSize() >= real_len) {
+                _request._body.append(buf->ReadPosition(), real_len);
+                buf->MoveReaderOffset(real_len);
+                _recv_statu = RECV_HTTP_OVER;
+                return true;
+            }
+            //  3.2 缓冲区中数据，无法满足当前正文的需要，数据不足，取出数据，然后等待新数据到来
+            _request._body.append(buf->ReadPosition(), buf->ReadableSize());
+            buf->MoveReaderOffset(buf->ReadableSize());
+            return true;
+        }
+    public:
+        HttpContext():_resp_status_code(200), _recv_statu(RECV_HTTP_LINE) {}
+        void ReSet() {
+            _resp_status_code = 200;
+            _recv_statu = RECV_HTTP_LINE;
+            _request.Reset();
+        }
+        int GetRespStatu() { return _resp_status_code; }
+        HttpRecvStatu RecvStatu() { return _recv_statu; }
+        HttpRequest &Request() { return _request; }
+        //接收并解析HTTP请求
+        void RecvHttpRequest(Buffer *buf) {
+            //不同的状态，做不同的事情，但是这里不要break， 因为处理完请求行后，应该立即处理头部，而不是退出等新数据
+            switch(_recv_statu) {
+                case RECV_HTTP_LINE: RecvHttpLine(buf);
+                case RECV_HTTP_HEAD: RecvHttpHead(buf);
+                case RECV_HTTP_BODY: RecvHttpBody(buf);
+            }
+            return;
         }
 };
