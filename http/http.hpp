@@ -609,4 +609,53 @@ public:
         _recv_statu = RECV_HTTP_HEAD;
         return true;
     }
+
+     bool RecvHttpHead(Buffer *buf) {
+            if (_recv_statu != RECV_HTTP_HEAD) return false;
+            //一行一行取出数据，直到遇到空行为止， 头部的格式 key: val\r\nkey: val\r\n....
+            while(1){
+                std::string line = buf->GetLineAndPop();
+                //2. 需要考虑的一些要素：缓冲区中的数据不足一行， 获取的一行数据超大
+                if (line.size() == 0) {
+                    //缓冲区中的数据不足一行，则需要判断缓冲区的可读数据长度，如果很长了都不足一行，这是有问题的
+                    if (buf->ReadableSize() > MAX_LINE) {
+                        _recv_statu = RECV_HTTP_ERROR;
+                        _resp_status_code = 414;//URI TOO LONG
+                        return false;
+                    }
+                    //缓冲区中数据不足一行，但是也不多，就等等新数据的到来
+                    return true;
+                }
+                if (line.size() > MAX_LINE) {
+                    _recv_statu = RECV_HTTP_ERROR;
+                    _resp_status_code = 414;//URI TOO LONG
+                    return false;
+                }
+                if (line == "\n" || line == "\r\n") {
+                    break;
+                }
+                bool ret = ParseHttpHead(line);
+                if (ret == false) {
+                    return false;
+                }
+            }
+            //头部处理完毕，进入正文获取阶段
+            _recv_statu = RECV_HTTP_BODY;
+            return true;
+        }
+         bool ParseHttpHead(std::string &line) {
+            //key: val\r\nkey: val\r\n....
+            if (line.back() == '\n') line.pop_back();//末尾是换行则去掉换行字符
+            if (line.back() == '\r') line.pop_back();//末尾是回车则去掉回车字符
+            size_t pos = line.find(": ");
+            if (pos == std::string::npos) {
+                _recv_statu= RECV_HTTP_ERROR;
+                _resp_status_code = 400;//
+                return false;
+            }
+            std::string key = line.substr(0, pos);  
+            std::string val = line.substr(pos + 2);
+            _request.SetHeader(key, val);
+            return true;
+        }
 };
