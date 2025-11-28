@@ -703,3 +703,36 @@ public:
             return;
         }
 };
+
+class HttpServer
+{
+    private:
+
+    TcpServer _server;
+    std::string base_dir;//静态资源根目录
+    using Handler = std::function<void(const HttpRequest&,HttpResponse*)>;
+    Handler _get_route;
+    Handler _post_route;
+    Handler _put_route;
+    Handler _delete_route;
+
+    private:
+
+    void Dispatcher();    //分发任务给功能性处理逻辑
+    void Route(const HttpRequest &req, HttpResponse *resp);       //分辨是功能性请求还是静态资源获取
+    void FileHandler(); //静态资源请求处理逻辑
+    void WriteResponse();   //对返回资源进行组织
+    void OnMessage(const PtrConnection &conn,Buffer *buf)        //对缓冲区数据进行解析
+    {
+        HttpContext *context = conn->GetContext()->get<HttpContext>(); 
+        context->RecvHttpRequest(buf);
+        HttpRequest &request = context->Request();
+        HttpResponse response;
+        Route(request,&response);
+        WriteResponse();
+        conn->Shutdown();
+
+    }
+
+   
+};
