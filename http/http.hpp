@@ -917,8 +917,32 @@ public:
         _server.SetConnectedCallBack(std::bind(&HttpServer::OnConnected,this,std::placeholders::_1));
         _server.SetMessageCallBack(std::bind(&HttpServer::OnMessage,this,std::placeholders::_1,std::placeholders::_2));
     }
-    void SetGetHandler();
-    void SetPostHandler();
-    void SetPutHandler();
-    void SetDeleteHandler();
+    void SetGetHandler(const std::string &pattern,Handler &handler)
+    {
+        _get_route.push_back(std::make_pair(std::regex(pattern),handler));
+    }
+    void SetPostHandler(const std::string &pattern,Handler &handler)
+    {
+        _post_route.push_back(std::make_pair(std::regex(pattern),handler));
+    }
+    void SetPutHandler(const std::string &pattern,Handler &handler)
+    {
+        _put_route.push_back(std::make_pair(std::regex(pattern),handler));
+    }
+    void SetDeleteHandler(const std::string &pattern,Handler &handler)
+    {
+        _delete_route.push_back(std::make_pair(std::regex(pattern),handler));
+    }
+    void SetBaseDir(std::string &path)
+    {
+        _basedir = path;
+    }
+    void SetThreadCount(int count)
+    {
+        _server.SetThreadCount(count);
+    }
+    void Listen()
+    {
+        _server.Start();
+    }
 };
