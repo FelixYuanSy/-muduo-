@@ -718,9 +718,32 @@ class HttpServer
 
     private:
 
-    void Dispatcher();    //分发任务给功能性处理逻辑
-    void Route(const HttpRequest &req, HttpResponse *resp);       //分辨是功能性请求还是静态资源获取
-    void FileHandler(); //静态资源请求处理逻辑
+    void Dispatcher(const HttpRequest & req,Handler);    //分发任务给功能性处理逻辑
+    void Route(const HttpRequest &req, HttpResponse *resp)       //分辨是功能性请求还是静态资源获取
+    {
+        bool ret = FileHandler();
+        if (ret == false)
+        {
+
+        }
+        if(req._method == "Get")
+        {
+            return Dispatcher(req,_get_route);
+        }
+        else if(req._method == "Post")
+        {
+             return Dispatcher(req,_post_route);
+        }
+                else if(req._method == "Put")
+        {
+             return Dispatcher(req,_put_route);
+        }
+                else if(req._method == "Delete")
+        {
+             return Dispatcher(req,_delete_route);
+        }
+    }
+    bool FileHandler(); //静态资源请求处理逻辑
     void WriteResponse();   //对返回资源进行组织
     void OnMessage(const PtrConnection &conn,Buffer *buf)        //对缓冲区数据进行解析
     {
@@ -733,6 +756,13 @@ class HttpServer
         conn->Shutdown();
 
     }
+
+    public :
+    HttpServer();
+    void SetGetHandler();
+    void SetPostHandler();
+    void SetPutHandler();
+    void SetDeleteHandler();
 
    
 };
