@@ -733,39 +733,80 @@ class HttpServer
 {
 private:
     TcpServer _server;
-    std::string base_dir; // 静态资源根目录
+    std::string _basedir; // 静态资源根目录
     using Handler = std::function<void(const HttpRequest &, HttpResponse *)>;
-    Handler _get_route;
-    Handler _post_route;
-    Handler _put_route;
-    Handler _delete_route;
+    using Handlers = std::vector<std::pair<std::regex, Handler>>;
+    Handlers _get_route;
+    Handlers _post_route;
+    Handlers _put_route;
+    Handlers _delete_route;
 
 private:
-    void Dispatcher(const HttpRequest &req, Handler);      // 分发任务给功能性处理逻辑
-    void Route(const HttpRequest &req, HttpResponse *resp) // 分辨是功能性请求还是静态资源获取
+    bool IsFileHandler(const HttpRequest &req)
     {
-        bool ret = FileHandler();
-        if (ret == false)
+        if (_basedir.empty())
         {
+            return false;
         }
-        if (req._method == "Get")
+        if (req._method != "GET" || req._method != "HEAD")
         {
-            return Dispatcher(req, _get_route);
+            return false;
+        }
+                    if (Util::IsValidPath(req._path) == false) {
+                return false;
+            }
+            
+            std::string req_path = _basedir + req._path;//为了避免直接修改请求的资源路径，因此定义一个临时对象
+            if (req._path.back() == '/')  {
+                req_path += "index.html";
+            }
+            if (Util::IsRegularFile(req_path) == false) {
+                return false;
+            }
+            return true;
+    }
+    void FileHandler(const HttpRequest &req, HttpResponse *resp)
+    {
+    }
+    void Dispatcher(HttpRequest &req, HttpResponse *resp, Handlers &handles) // 分发任务给功能性处理逻辑
+    {
+        for (auto &handle : handles)
+        {
+            const std::regex &rex = handle.first;
+            const Handler &functor = handle.second;
+            bool ret = std::regex_match(req._path, req._mathces, rex);
+            if (ret == false)
+                continue;
+
+            return functor(req, resp);
+        }
+    }
+    void Route(HttpRequest &req, HttpResponse *resp) // 分辨是功能性请求还是静态资源获取
+    {
+        if (IsFileHandler(req))
+        {
+            return FileHandler(req, resp);
+        }
+
+        if (req._method == "Get" || req._method == "HEAD")
+        {
+            return Dispatcher(req, resp, _get_route);
         }
         else if (req._method == "Post")
         {
-            return Dispatcher(req, _post_route);
+            return Dispatcher(req, resp, _post_route);
         }
         else if (req._method == "Put")
         {
-            return Dispatcher(req, _put_route);
+            return Dispatcher(req, resp, _put_route);
         }
         else if (req._method == "Delete")
         {
-            return Dispatcher(req, _delete_route);
+            return Dispatcher(req, resp, _delete_route);
         }
-    }
-    bool FileHandler();                                                                       // 静态资源请求处理逻辑
+        resp->_statu_code = 405;
+        return;
+    } // 静态资源请求处理逻辑
     void WriteResponse(const PtrConnection &conn, const HttpRequest &req, HttpResponse &resp) // 对返回资源进行组织
     {
         if (req.IsShortConnection() == true)
