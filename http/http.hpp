@@ -820,7 +820,7 @@ private:
     void OnMessage(const PtrConnection &conn, Buffer *buf) // 对缓冲区数据进行解析
     {
         HttpContext *context = conn->GetContext()->get<HttpContext>();
-        HttpResponse response;
+        HttpResponse response(context->GetRespStatuCode());
         context->RecvHttpRequest(buf);
         HttpRequest &request = context->Request();
         // 如果解析错误情况
@@ -828,10 +828,9 @@ private:
         {
             ErrorHandler(request, &response);
             WriteResponse(conn, request, response);
-            if (request.IsShortConnection() == true)
-            {
-                conn->Shutdown();
-            }
+            context->ReSet();
+            buf->MoveReaderOffset(buf->ReadableSize());
+            conn->Shutdown();
             return;
         }
         // 如果状态为请求未接收完成,Status不为HTTPOVER,则继续等待数据再重新处理
@@ -843,7 +842,10 @@ private:
         Route(request, &response);
         WriteResponse(conn, request, response);
         context->ReSet();
-        conn->Shutdown();
+        if (request.IsShortConnection() == true)
+            conn->Shutdown();
+
+        return;
     }
 
 public:
