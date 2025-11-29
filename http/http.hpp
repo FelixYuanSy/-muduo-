@@ -373,7 +373,7 @@ public:
         _headers.insert(std::make_pair(key, val));
     }
     // 查看指定的Header是否存在
-    bool HasHeader(const std::string &key)
+    bool HasHeader(const std::string &key) const
     {
         auto it = _headers.find(key);
         if (it == _headers.end())
@@ -383,7 +383,7 @@ public:
         return true;
     }
     // 获取指定的头部字段值
-    std::string GetHeader(const std::string &key)
+    std::string GetHeader(const std::string &key) const
     {
         bool ret = HasHeader(key);
         if (ret == false)
@@ -439,7 +439,7 @@ public:
     }
 
     // 判断是否是短链接
-    bool IsShortConnection()
+    bool IsShortConnection() const
     {
         // 没有Connection字段，或者有Connection但是值是close，则都是短链接，否则就是长连接
         if (HasHeader("Connection") == true && GetHeader("Connection") == "keep-alive")
@@ -764,7 +764,41 @@ private:
         }
     }
     bool FileHandler();                                            // 静态资源请求处理逻辑
-    void WriteResponse();                                          // 对返回资源进行组织
+    void WriteResponse(const PtrConnection &conn, const HttpRequest &req,HttpResponse &resp)                                        // 对返回资源进行组织
+    {
+        if(req.IsShortConnection() == true)
+        {
+            resp.SetHeader("Connection","close");
+        }
+        else
+        {
+            resp.SetHeader("Connection","keep-alive");
+        }
+
+        if(resp._body.empty()==false && resp.HasHeader("Content-Length")==false)
+        {
+            resp.SetHeader("Content-Length",std::to_string(resp._body.size()));
+        }
+        if(resp._body.empty()==false && resp.HasHeader("Content-Type")==false)
+        {
+            resp.SetHeader("Content-Type","application/octet-stream");
+        }
+        if(resp._redirect_flag==true)
+        {
+            resp.SetHeader("Location",resp._redirect_url);
+
+        }
+
+        std::stringstream str;
+        str<<req._version<<" "<<std::to_string(resp._statu_code)<<" "<<Util::StatuDesc(resp._statu_code)<<"\r\n";
+        for(auto &head:resp._headers)
+        {
+            str<<head.first<<": "<<head.second<<" \r\n";
+        }
+        str<<"\r\n";
+        str<<resp._body;
+        conn->Send(str.str().c_str(),str.str().size());
+    }
     void ErrorHandler(const HttpRequest &req, HttpResponse *resp) // 返回错误页面给resp
     {
         std::string body;
