@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 #include <regex>
 #include "../server.hpp"
+#define DEFAULT_TIMEOUT 30
 class Util
 {
 public:
@@ -904,9 +905,18 @@ private:
 
         return;
     }
+    void OnConnected(const PtrConnection &conn)
+    {
+        
+    }
 
 public:
-    HttpServer();
+    HttpServer(int port):_server(port)
+    {
+        _server.EnableInactiveRelease(DEFAULT_TIMEOUT);
+        _server.SetConnectedCallBack(std::bind(&HttpServer::OnConnected,this,std::placeholders::_1));
+        _server.SetMessageCallBack(std::bind(&HttpServer::OnMessage,this,std::placeholders::_1,std::placeholders::_2));
+    }
     void SetGetHandler();
     void SetPostHandler();
     void SetPutHandler();
