@@ -560,6 +560,7 @@ public:
         // 3 : user=xiaoming&pass=123123
         // 4 : HTTP/1.1
         _request._method = matches[1];
+        std::transform(_request._method.begin(), _request._method.end(), _request._method.begin(), ::toupper); // 如果读取到小写转换为大写
         _request._path = Util::UrlDecode(matches[2], false);
         _request._version = matches[4];
         std::vector<std::string> array;
@@ -752,21 +753,36 @@ private:
         {
             return false;
         }
-                    if (Util::IsValidPath(req._path) == false) {
-                return false;
-            }
-            
-            std::string req_path = _basedir + req._path;//为了避免直接修改请求的资源路径，因此定义一个临时对象
-            if (req._path.back() == '/')  {
-                req_path += "index.html";
-            }
-            if (Util::IsRegularFile(req_path) == false) {
-                return false;
-            }
-            return true;
+        if (Util::IsValidPath(req._path) == false)
+        {
+            return false;
+        }
+
+        std::string req_path = _basedir + req._path; // 为了避免直接修改请求的资源路径，因此定义一个临时对象
+        if (req._path.back() == '/')
+        {
+            req_path += "index.html";
+        }
+        if (Util::IsRegularFile(req_path) == false)
+        {
+            return false;
+        }
+        return true;
     }
     void FileHandler(const HttpRequest &req, HttpResponse *resp)
     {
+        std::string req_path = _basedir + req._path;
+        if(req._path.back()=='/')
+        {
+            req_path += "index.html";
+        }
+        bool ret = Util::ReadFile(req_path,&resp->_body );
+        if(ret == false)
+            return;
+        std::string mime = Util::ExtMime(req_path);
+        resp->SetHeader("Content-Type",mime);
+        return;
+
     }
     void Dispatcher(HttpRequest &req, HttpResponse *resp, Handlers &handles) // 分发任务给功能性处理逻辑
     {
