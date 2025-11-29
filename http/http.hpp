@@ -472,6 +472,8 @@ public:
     std::unordered_map<std::string, std::string> _headers; // 返回的头部
 
 public:
+    HttpResponse() : _redirect_flag(false), _statu_code(200) {}
+    HttpResponse(int statu) : _redirect_flag(false), _statu_code(statu) {}
     void SetHeader(const std::string &key, const std::string &val)
     {
         _headers.insert(std::make_pair(key, val));
@@ -763,41 +765,40 @@ private:
             return Dispatcher(req, _delete_route);
         }
     }
-    bool FileHandler();                                            // 静态资源请求处理逻辑
-    void WriteResponse(const PtrConnection &conn, const HttpRequest &req,HttpResponse &resp)                                        // 对返回资源进行组织
+    bool FileHandler();                                                                       // 静态资源请求处理逻辑
+    void WriteResponse(const PtrConnection &conn, const HttpRequest &req, HttpResponse &resp) // 对返回资源进行组织
     {
-        if(req.IsShortConnection() == true)
+        if (req.IsShortConnection() == true)
         {
-            resp.SetHeader("Connection","close");
+            resp.SetHeader("Connection", "close");
         }
         else
         {
-            resp.SetHeader("Connection","keep-alive");
+            resp.SetHeader("Connection", "keep-alive");
         }
 
-        if(resp._body.empty()==false && resp.HasHeader("Content-Length")==false)
+        if (resp._body.empty() == false && resp.HasHeader("Content-Length") == false)
         {
-            resp.SetHeader("Content-Length",std::to_string(resp._body.size()));
+            resp.SetHeader("Content-Length", std::to_string(resp._body.size()));
         }
-        if(resp._body.empty()==false && resp.HasHeader("Content-Type")==false)
+        if (resp._body.empty() == false && resp.HasHeader("Content-Type") == false)
         {
-            resp.SetHeader("Content-Type","application/octet-stream");
+            resp.SetHeader("Content-Type", "application/octet-stream");
         }
-        if(resp._redirect_flag==true)
+        if (resp._redirect_flag == true)
         {
-            resp.SetHeader("Location",resp._redirect_url);
-
+            resp.SetHeader("Location", resp._redirect_url);
         }
 
         std::stringstream str;
-        str<<req._version<<" "<<std::to_string(resp._statu_code)<<" "<<Util::StatuDesc(resp._statu_code)<<"\r\n";
-        for(auto &head:resp._headers)
+        str << req._version << " " << std::to_string(resp._statu_code) << " " << Util::StatuDesc(resp._statu_code) << "\r\n";
+        for (auto &head : resp._headers)
         {
-            str<<head.first<<": "<<head.second<<" \r\n";
+            str << head.first << ": " << head.second << " \r\n";
         }
-        str<<"\r\n";
-        str<<resp._body;
-        conn->Send(str.str().c_str(),str.str().size());
+        str << "\r\n";
+        str << resp._body;
+        conn->Send(str.str().c_str(), str.str().size());
     }
     void ErrorHandler(const HttpRequest &req, HttpResponse *resp) // 返回错误页面给resp
     {
@@ -815,30 +816,32 @@ private:
         body += "</body>";
         body += "</html>";
         resp->SetContent(body);
-
     }
-    void OnMessage(const PtrConnection &conn, Buffer *buf)         // 对缓冲区数据进行解析
+    void OnMessage(const PtrConnection &conn, Buffer *buf) // 对缓冲区数据进行解析
     {
         HttpContext *context = conn->GetContext()->get<HttpContext>();
         HttpResponse response;
         context->RecvHttpRequest(buf);
         HttpRequest &request = context->Request();
-        //如果解析错误情况
+        // 如果解析错误情况
         if (context->GetRespStatuCode() >= 400)
         {
             ErrorHandler(request, &response);
-            WriteResponse(PtrConnection & conn, req, resp);
-            conn->Shutdown();
-            return ;
+            WriteResponse(conn, request, response);
+            if (request.IsShortConnection() == true)
+            {
+                conn->Shutdown();
+            }
+            return;
         }
-        //如果状态为请求未接收完成,Status不为HTTPOVER,则继续等待数据再重新处理
-        if(context->RecvStatu() != RECV_HTTP_OVER)
+        // 如果状态为请求未接收完成,Status不为HTTPOVER,则继续等待数据再重新处理
+        if (context->RecvStatu() != RECV_HTTP_OVER)
         {
             return;
         }
 
         Route(request, &response);
-        WriteResponse(PtrConnection & conn, req, resp);
+        WriteResponse(conn, request, response);
         context->ReSet();
         conn->Shutdown();
     }
