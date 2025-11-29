@@ -464,7 +464,7 @@ public:
 
 class HttpResponse
 {
-private:
+public:
     int _statu_code;                                       // 返回的状态码
     std::string _redirect_url;                             // 重定向url
     std::string _body;                                     // 返回的body
@@ -538,8 +538,8 @@ class HttpContext
 {
 private:
     HttpRecvStatu _recv_statu; // 当前处于处理的哪个状态
-    HttpRequest _request;       // 已经处理的字段
-    int _resp_status_code;      // 应该返回的状态码
+    HttpRequest _request;      // 已经处理的字段
+    int _resp_status_code;     // 应该返回的状态码
 
 public:
     bool ParseHttpLine(const std::string &line)
@@ -602,7 +602,7 @@ public:
             return false;
         }
         bool ret = ParseHttpLine(line);
-        if(ret == false)
+        if (ret == false)
         {
             return false;
         }
@@ -610,159 +610,209 @@ public:
         return true;
     }
 
-     bool RecvHttpHead(Buffer *buf) {
-            if (_recv_statu != RECV_HTTP_HEAD) return false;
-            //一行一行取出数据，直到遇到空行为止， 头部的格式 key: val\r\nkey: val\r\n....
-            while(1){
-                std::string line = buf->GetLineAndPop();
-                //2. 需要考虑的一些要素：缓冲区中的数据不足一行， 获取的一行数据超大
-                if (line.size() == 0) {
-                    //缓冲区中的数据不足一行，则需要判断缓冲区的可读数据长度，如果很长了都不足一行，这是有问题的
-                    if (buf->ReadableSize() > MAX_LINE) {
-                        _recv_statu = RECV_HTTP_ERROR;
-                        _resp_status_code = 414;//URI TOO LONG
-                        return false;
-                    }
-                    //缓冲区中数据不足一行，但是也不多，就等等新数据的到来
-                    return true;
-                }
-                if (line.size() > MAX_LINE) {
+    bool RecvHttpHead(Buffer *buf)
+    {
+        if (_recv_statu != RECV_HTTP_HEAD)
+            return false;
+        // 一行一行取出数据，直到遇到空行为止， 头部的格式 key: val\r\nkey: val\r\n....
+        while (1)
+        {
+            std::string line = buf->GetLineAndPop();
+            // 2. 需要考虑的一些要素：缓冲区中的数据不足一行， 获取的一行数据超大
+            if (line.size() == 0)
+            {
+                // 缓冲区中的数据不足一行，则需要判断缓冲区的可读数据长度，如果很长了都不足一行，这是有问题的
+                if (buf->ReadableSize() > MAX_LINE)
+                {
                     _recv_statu = RECV_HTTP_ERROR;
-                    _resp_status_code = 414;//URI TOO LONG
+                    _resp_status_code = 414; // URI TOO LONG
                     return false;
                 }
-                if (line == "\n" || line == "\r\n") {
-                    break;
-                }
-                bool ret = ParseHttpHead(line);
-                if (ret == false) {
-                    return false;
-                }
+                // 缓冲区中数据不足一行，但是也不多，就等等新数据的到来
+                return true;
             }
-            //头部处理完毕，进入正文获取阶段
-            _recv_statu = RECV_HTTP_BODY;
-            return true;
-        }
-         bool ParseHttpHead(std::string &line) {
-            //key: val\r\nkey: val\r\n....
-            if (line.back() == '\n') line.pop_back();//末尾是换行则去掉换行字符
-            if (line.back() == '\r') line.pop_back();//末尾是回车则去掉回车字符
-            size_t pos = line.find(": ");
-            if (pos == std::string::npos) {
-                _recv_statu= RECV_HTTP_ERROR;
-                _resp_status_code = 400;//
+            if (line.size() > MAX_LINE)
+            {
+                _recv_statu = RECV_HTTP_ERROR;
+                _resp_status_code = 414; // URI TOO LONG
                 return false;
             }
-            std::string key = line.substr(0, pos);  
-            std::string val = line.substr(pos + 2);
-            _request.SetHeader(key, val);
+            if (line == "\n" || line == "\r\n")
+            {
+                break;
+            }
+            bool ret = ParseHttpHead(line);
+            if (ret == false)
+            {
+                return false;
+            }
+        }
+        // 头部处理完毕，进入正文获取阶段
+        _recv_statu = RECV_HTTP_BODY;
+        return true;
+    }
+    bool ParseHttpHead(std::string &line)
+    {
+        // key: val\r\nkey: val\r\n....
+        if (line.back() == '\n')
+            line.pop_back(); // 末尾是换行则去掉换行字符
+        if (line.back() == '\r')
+            line.pop_back(); // 末尾是回车则去掉回车字符
+        size_t pos = line.find(": ");
+        if (pos == std::string::npos)
+        {
+            _recv_statu = RECV_HTTP_ERROR;
+            _resp_status_code = 400; //
+            return false;
+        }
+        std::string key = line.substr(0, pos);
+        std::string val = line.substr(pos + 2);
+        _request.SetHeader(key, val);
+        return true;
+    }
+    bool RecvHttpBody(Buffer *buf)
+    {
+        if (_recv_statu != RECV_HTTP_BODY)
+            return false;
+        // 1. 获取正文长度
+        size_t content_length = _request.GetBodyLength();
+        if (content_length == 0)
+        {
+            // 没有正文，则请求接收解析完毕
+            _recv_statu = RECV_HTTP_OVER;
             return true;
         }
-         bool RecvHttpBody(Buffer *buf) {
-            if (_recv_statu != RECV_HTTP_BODY) return false;
-            //1. 获取正文长度
-            size_t content_length = _request.GetBodyLength();
-            if (content_length == 0) {
-                //没有正文，则请求接收解析完毕
-                _recv_statu = RECV_HTTP_OVER;
-                return true;
-            }
-            //2. 当前已经接收了多少正文,其实就是往  _request._body 中放了多少数据了
-            size_t real_len = content_length - _request._body.size();//实际还需要接收的正文长度
-            //3. 接收正文放到body中，但是也要考虑当前缓冲区中的数据，是否是全部的正文
-            //  3.1 缓冲区中数据，包含了当前请求的所有正文，则取出所需的数据
-            if (buf->ReadableSize() >= real_len) {
-                _request._body.append(buf->ReadPosition(), real_len);
-                buf->MoveReaderOffset(real_len);
-                _recv_statu = RECV_HTTP_OVER;
-                return true;
-            }
-            //  3.2 缓冲区中数据，无法满足当前正文的需要，数据不足，取出数据，然后等待新数据到来
-            _request._body.append(buf->ReadPosition(), buf->ReadableSize());
-            buf->MoveReaderOffset(buf->ReadableSize());
+        // 2. 当前已经接收了多少正文,其实就是往  _request._body 中放了多少数据了
+        size_t real_len = content_length - _request._body.size(); // 实际还需要接收的正文长度
+        // 3. 接收正文放到body中，但是也要考虑当前缓冲区中的数据，是否是全部的正文
+        //   3.1 缓冲区中数据，包含了当前请求的所有正文，则取出所需的数据
+        if (buf->ReadableSize() >= real_len)
+        {
+            _request._body.append(buf->ReadPosition(), real_len);
+            buf->MoveReaderOffset(real_len);
+            _recv_statu = RECV_HTTP_OVER;
             return true;
         }
-    public:
-        HttpContext():_resp_status_code(200), _recv_statu(RECV_HTTP_LINE) {}
-        void ReSet() {
-            _resp_status_code = 200;
-            _recv_statu = RECV_HTTP_LINE;
-            _request.Reset();
+        //  3.2 缓冲区中数据，无法满足当前正文的需要，数据不足，取出数据，然后等待新数据到来
+        _request._body.append(buf->ReadPosition(), buf->ReadableSize());
+        buf->MoveReaderOffset(buf->ReadableSize());
+        return true;
+    }
+
+public:
+    HttpContext() : _resp_status_code(200), _recv_statu(RECV_HTTP_LINE) {}
+    void ReSet()
+    {
+        _resp_status_code = 200;
+        _recv_statu = RECV_HTTP_LINE;
+        _request.Reset();
+    }
+    int GetRespStatuCode() { return _resp_status_code; }
+    HttpRecvStatu RecvStatu() { return _recv_statu; }
+    HttpRequest &Request() { return _request; }
+    // 接收并解析HTTP请求
+    void RecvHttpRequest(Buffer *buf)
+    {
+        // 不同的状态，做不同的事情，但是这里不要break， 因为处理完请求行后，应该立即处理头部，而不是退出等新数据
+        switch (_recv_statu)
+        {
+        case RECV_HTTP_LINE:
+            RecvHttpLine(buf);
+        case RECV_HTTP_HEAD:
+            RecvHttpHead(buf);
+        case RECV_HTTP_BODY:
+            RecvHttpBody(buf);
         }
-        int GetRespStatu() { return _resp_status_code; }
-        HttpRecvStatu RecvStatu() { return _recv_statu; }
-        HttpRequest &Request() { return _request; }
-        //接收并解析HTTP请求
-        void RecvHttpRequest(Buffer *buf) {
-            //不同的状态，做不同的事情，但是这里不要break， 因为处理完请求行后，应该立即处理头部，而不是退出等新数据
-            switch(_recv_statu) {
-                case RECV_HTTP_LINE: RecvHttpLine(buf);
-                case RECV_HTTP_HEAD: RecvHttpHead(buf);
-                case RECV_HTTP_BODY: RecvHttpBody(buf);
-            }
-            return;
-        }
+        return;
+    }
 };
 
 class HttpServer
 {
-    private:
-
+private:
     TcpServer _server;
-    std::string base_dir;//静态资源根目录
-    using Handler = std::function<void(const HttpRequest&,HttpResponse*)>;
+    std::string base_dir; // 静态资源根目录
+    using Handler = std::function<void(const HttpRequest &, HttpResponse *)>;
     Handler _get_route;
     Handler _post_route;
     Handler _put_route;
     Handler _delete_route;
 
-    private:
-
-    void Dispatcher(const HttpRequest & req,Handler);    //分发任务给功能性处理逻辑
-    void Route(const HttpRequest &req, HttpResponse *resp)       //分辨是功能性请求还是静态资源获取
+private:
+    void Dispatcher(const HttpRequest &req, Handler);      // 分发任务给功能性处理逻辑
+    void Route(const HttpRequest &req, HttpResponse *resp) // 分辨是功能性请求还是静态资源获取
     {
         bool ret = FileHandler();
         if (ret == false)
         {
-
         }
-        if(req._method == "Get")
+        if (req._method == "Get")
         {
-            return Dispatcher(req,_get_route);
+            return Dispatcher(req, _get_route);
         }
-        else if(req._method == "Post")
+        else if (req._method == "Post")
         {
-             return Dispatcher(req,_post_route);
+            return Dispatcher(req, _post_route);
         }
-                else if(req._method == "Put")
+        else if (req._method == "Put")
         {
-             return Dispatcher(req,_put_route);
+            return Dispatcher(req, _put_route);
         }
-                else if(req._method == "Delete")
+        else if (req._method == "Delete")
         {
-             return Dispatcher(req,_delete_route);
+            return Dispatcher(req, _delete_route);
         }
     }
-    bool FileHandler(); //静态资源请求处理逻辑
-    void WriteResponse();   //对返回资源进行组织
-    void OnMessage(const PtrConnection &conn,Buffer *buf)        //对缓冲区数据进行解析
+    bool FileHandler();                                            // 静态资源请求处理逻辑
+    void WriteResponse();                                          // 对返回资源进行组织
+    void ErrorHandler(const HttpRequest &req, HttpResponse *resp) // 返回错误页面给resp
     {
-        HttpContext *context = conn->GetContext()->get<HttpContext>(); 
+        std::string body;
+        body += "<html>";
+        body += "<head>";
+        body += "<meta http-equiv='Content-Type' content='text/html;charset=utf-8'>";
+        body += "</head>";
+        body += "<body>";
+        body += "<h1>";
+        body += std::to_string(resp->_statu_code);
+        body += " ";
+        body += Util::StatuDesc(resp->_statu_code);
+        body += "</h1>";
+        body += "</body>";
+        body += "</html>";
+        resp->SetContent(body);
+
+    }
+    void OnMessage(const PtrConnection &conn, Buffer *buf)         // 对缓冲区数据进行解析
+    {
+        HttpContext *context = conn->GetContext()->get<HttpContext>();
+        HttpResponse response;
         context->RecvHttpRequest(buf);
         HttpRequest &request = context->Request();
-        HttpResponse response;
-        Route(request,&response);
-        WriteResponse();
-        conn->Shutdown();
+        //如果解析错误情况
+        if (context->GetRespStatuCode() >= 400)
+        {
+            ErrorHandler(request, &response);
+            WriteResponse(PtrConnection & conn, req, resp);
+            conn->Shutdown();
+            return ;
+        }
+        //如果状态为请求未接收完成,Status不为HTTPOVER,则继续等待数据再重新处理
+        if(context->RecvStatu() != RECV_HTTP_OVER)
+        {
+            return;
+        }
 
+        Route(request, &response);
+        WriteResponse(PtrConnection & conn, req, resp);
+        context->ReSet();
+        conn->Shutdown();
     }
 
-    public :
+public:
     HttpServer();
     void SetGetHandler();
     void SetPostHandler();
     void SetPutHandler();
     void SetDeleteHandler();
-
-   
 };
