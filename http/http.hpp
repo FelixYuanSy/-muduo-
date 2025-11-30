@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <regex>
 #include "../server.hpp"
-#define DEFAULT_TIMEOUT 30
+#define DEFAULT_TIMEOUT 10
 class Util
 {
 public:
@@ -521,15 +521,16 @@ public:
         _body = data;
         SetHeader("Content-Type", type);
     }
-    bool IsShortConnection()
-    {
-        // 没有Connection字段，或者有Connection但是值是close，则都是短链接，否则就是长连接
-        if (HasHeader("Connection") == true && GetHeader("Connection") == "keep-alive")
-        {
-            return false;
-        }
-        return true;
-    }
+    // bool IsShortConnection()
+    // {
+    //     // 没有Connection字段，或者有Connection但是值是close，则都是短链接，否则就是长连接
+    //     if (HasHeader("Connection") == true && GetHeader("Connection") == "keep-alive")
+    //     {
+    //         return false;
+    //     }
+    //     return true;
+        
+    // }
 };
 
 // HttpContext类用来防止传来的request是不完整的,需要先传入buffer里面进行处理再传入Request
@@ -915,8 +916,9 @@ private:
 
             Route(request, &response);
             WriteResponse(conn, request, response);
+            bool is_short = request.IsShortConnection();
             context->ReSet();
-            if (request.IsShortConnection() == true)
+            if (is_short == true)
                 conn->Shutdown();
         }
 
