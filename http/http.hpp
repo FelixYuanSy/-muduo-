@@ -51,6 +51,7 @@ public:
         ifs.seekg(0, ifs.end);
         fsize = ifs.tellg();
         ifs.seekg(0, ifs.beg);
+        buf->resize(fsize);
         ifs.read(&(*buf)[0], fsize);
         if (ifs.good() == false)
         {
@@ -67,14 +68,14 @@ public:
         std::ofstream ofs(file_name, std::ios::binary | std::ios::trunc);
         if (ofs.is_open() == false)
         {
-            printf("Open %s File Failed\n", file_name);
-            ofs.close();
+            printf("Open %s File Failed\n", file_name.c_str());
+            // ofs.close();
             return false;
         }
         ofs.write(buf.c_str(), buf.size());
         if (ofs.good() == false)
         {
-            ERR_LOG("Write %s File Error\n", file_name);
+            ERR_LOG("Write %s File Error\n", file_name.c_str());
             ofs.close();
             return false;
         }
@@ -102,7 +103,7 @@ public:
                 continue;
             }
             // 其余转化为%HH
-            char tmp[4];
+            char tmp[4] = {0};
             snprintf(tmp, 4, "%%%02X", c); //%%用来转译为'%',第三个%用来表示后面为数字,0为未满两位数用0补齐第一位,2表示宽度为两位,X表示转换为16进制
             str += tmp;
         }
@@ -139,10 +140,10 @@ public:
                 i += 2;
                 continue;
             }
-            if (url[i] == ' ' && convert_space_to_plus == true)
+            if (url[i] == '+' && convert_space_to_plus == true)
             {
-                str += '+';
-                i += 2;
+                str += ' ';
+                // i += 2;
                 continue;
             }
             str += url[i];
@@ -369,7 +370,8 @@ public:
     std::unordered_map<std::string, std::string> _params;  // 查询字符串
 
 public:
-    void SetHeader(std::string &key, std::string &val)
+    HttpRequest() : _version("HTTP/1.1") {}
+    void SetHeader(const std::string &key, const std::string &val)
     {
         _headers.insert(std::make_pair(key, val));
     }
@@ -386,11 +388,11 @@ public:
     // 获取指定的头部字段值
     std::string GetHeader(const std::string &key) const
     {
-        bool ret = HasHeader(key);
-        if (ret == false)
-        {
-            return "未找到当前头部值\n";
-        }
+        // bool ret = HasHeader(key);
+        // if (ret == false)
+        // {
+        //     return "can not find any this header\n";
+        // }
         auto it = _headers.find(key);
         if (it == _headers.end())
         {
@@ -399,12 +401,12 @@ public:
         return it->second;
     }
     // Params用来设置,获取查询字符串
-    void SetParams(std::string &key, std::string &val)
+    void SetParams(const std::string &key, const std::string &val)
     {
         _params.insert(std::make_pair(key, val));
     }
 
-    bool HasParam(const std::string &key)
+    bool HasParam(const std::string &key) const
     {
         auto it = _params.find(key);
         if (it == _params.end())
@@ -414,13 +416,13 @@ public:
         return true;
     }
 
-    std::string GetParams(const std::string &key)
+    std::string GetParams(const std::string &key) const
     {
-        bool ret = HasParam(key);
-        if (ret == false)
-        {
-            return "未找到当前字符值\n";
-        }
+        // bool ret = HasParam(key);
+        // if (ret == false)
+        // {
+        //     return "未找到当前字符值\n";
+        // }
         auto it = _params.find(key);
         if (it == _params.end())
         {
@@ -433,8 +435,12 @@ public:
     {
         // 需要有Conten_Length 这个Key 才有正文
         bool ret = HasHeader("Content-Length");
-        if (ret < 0)
+        if (ret == false)
+        {
+            DBG_LOG("未找到头部");
             return 0;
+        }
+
         std::string clen = GetHeader("Content-Length");
         return std::stol(clen);
     }
@@ -454,7 +460,7 @@ public:
     {
         _method.clear();
         _path.clear();
-        _version.clear();
+        _version = "HTTP/1.1";
         _body.clear();
         _headers.clear();
         _params.clear();
@@ -492,11 +498,11 @@ public:
     // 获取指定的头部字段值
     std::string GetHeader(const std::string &key)
     {
-        bool ret = HasHeader(key);
-        if (ret == false)
-        {
-            return "未找到当前头部值\n";
-        }
+        // bool ret = HasHeader(key);
+        // if (ret == false)
+        // {
+        //     return "未找到当前头部值\n";
+        // }
         auto it = _headers.find(key);
         if (it == _headers.end())
         {
@@ -553,6 +559,7 @@ public:
         if (ret == false)
         {
             _recv_statu = RECV_HTTP_ERROR;
+            _resp_status_code = 400; // BAD REQUEST
             return false;
         }
         // 0 : GET /EA/login?user=xiaoming&pass=123123 HTTP/1.1
@@ -598,6 +605,7 @@ public:
                 _resp_status_code = 414; // URL TOO LONG
                 return false;
             }
+            return true;
         }
         if (line.size() > MAX_LINE)
         {
@@ -750,7 +758,7 @@ private:
         {
             return false;
         }
-        if (req._method != "GET" || req._method != "HEAD")
+        if (req._method != "GET" && req._method != "HEAD")
         {
             return false;
         }
@@ -760,6 +768,7 @@ private:
         }
 
         std::string req_path = _basedir + req._path; // 为了避免直接修改请求的资源路径，因此定义一个临时对象
+        std::cout << req_path << std::endl;
         if (req._path.back() == '/')
         {
             req_path += "index.html";
@@ -773,17 +782,22 @@ private:
     void FileHandler(const HttpRequest &req, HttpResponse *resp)
     {
         std::string req_path = _basedir + req._path;
-        if(req._path.back()=='/')
+
+        if (req._path.back() == '/')
         {
             req_path += "index.html";
         }
-        bool ret = Util::ReadFile(req_path,&resp->_body );
-        if(ret == false)
+        bool ret = Util::ReadFile(req_path, &resp->_body);
+        if (ret == false)
+        {
+            resp->_statu_code = 404;
+            DBG_LOG("FileHandler: Failed to read file: %s", req_path.c_str());
             return;
-        std::string mime = Util::ExtMime(req_path);
-        resp->SetHeader("Content-Type",mime);
-        return;
+        }
 
+        std::string mime = Util::ExtMime(req_path);
+        resp->SetHeader("Content-Type", mime);
+        return;
     }
     void Dispatcher(HttpRequest &req, HttpResponse *resp, Handlers &handles) // 分发任务给功能性处理逻辑
     {
@@ -800,30 +814,30 @@ private:
     }
     void Route(HttpRequest &req, HttpResponse *resp) // 分辨是功能性请求还是静态资源获取
     {
-        if (IsFileHandler(req))
+        if (IsFileHandler(req) == true)
         {
             return FileHandler(req, resp);
         }
 
-        if (req._method == "Get" || req._method == "HEAD")
+        if (req._method == "GET" || req._method == "HEAD")
         {
             return Dispatcher(req, resp, _get_route);
         }
-        else if (req._method == "Post")
+        else if (req._method == "POST")
         {
             return Dispatcher(req, resp, _post_route);
         }
-        else if (req._method == "Put")
+        else if (req._method == "PUT")
         {
             return Dispatcher(req, resp, _put_route);
         }
-        else if (req._method == "Delete")
+        else if (req._method == "DELETE")
         {
             return Dispatcher(req, resp, _delete_route);
         }
-        resp->_statu_code = 405;
+        resp->_statu_code = 404;
         return;
-    } // 静态资源请求处理逻辑
+    }
     void WriteResponse(const PtrConnection &conn, const HttpRequest &req, HttpResponse &resp) // 对返回资源进行组织
     {
         if (req.IsShortConnection() == true)
@@ -852,7 +866,7 @@ private:
         str << req._version << " " << std::to_string(resp._statu_code) << " " << Util::StatuDesc(resp._statu_code) << "\r\n";
         for (auto &head : resp._headers)
         {
-            str << head.first << ": " << head.second << " \r\n";
+            str << head.first << ": " << head.second << "\r\n";
         }
         str << "\r\n";
         str << resp._body;
@@ -877,64 +891,69 @@ private:
     }
     void OnMessage(const PtrConnection &conn, Buffer *buf) // 对缓冲区数据进行解析
     {
-        HttpContext *context = conn->GetContext()->get<HttpContext>();
-        HttpResponse response(context->GetRespStatuCode());
-        context->RecvHttpRequest(buf);
-        HttpRequest &request = context->Request();
-        // 如果解析错误情况
-        if (context->GetRespStatuCode() >= 400)
+        while (buf->ReadableSize() > 0)
         {
-            ErrorHandler(request, &response);
+            HttpContext *context = conn->GetContext()->get<HttpContext>();
+            context->RecvHttpRequest(buf);
+            HttpRequest &request = context->Request();
+            HttpResponse response(context->GetRespStatuCode());
+            // 如果解析错误情况
+            if (context->GetRespStatuCode() >= 400)
+            {
+                ErrorHandler(request, &response);
+                WriteResponse(conn, request, response);
+                context->ReSet();
+                buf->MoveReaderOffset(buf->ReadableSize());
+                conn->Shutdown();
+                return;
+            }
+            // 如果状态为请求未接收完成,Status不为HTTPOVER,则继续等待数据再重新处理
+            if (context->RecvStatu() != RECV_HTTP_OVER)
+            {
+                return;
+            }
+
+            Route(request, &response);
             WriteResponse(conn, request, response);
             context->ReSet();
-            buf->MoveReaderOffset(buf->ReadableSize());
-            conn->Shutdown();
-            return;
+            if (request.IsShortConnection() == true)
+                conn->Shutdown();
         }
-        // 如果状态为请求未接收完成,Status不为HTTPOVER,则继续等待数据再重新处理
-        if (context->RecvStatu() != RECV_HTTP_OVER)
-        {
-            return;
-        }
-
-        Route(request, &response);
-        WriteResponse(conn, request, response);
-        context->ReSet();
-        if (request.IsShortConnection() == true)
-            conn->Shutdown();
 
         return;
     }
     void OnConnected(const PtrConnection &conn)
     {
-        
+        conn->SetContext(HttpContext());
+        DBG_LOG("NEW CONNECTION %p", conn.get());
     }
 
 public:
-    HttpServer(int port):_server(port)
+    HttpServer(int port, int timeout = DEFAULT_TIMEOUT) : _server(port)
     {
-        _server.EnableInactiveRelease(DEFAULT_TIMEOUT);
-        _server.SetConnectedCallBack(std::bind(&HttpServer::OnConnected,this,std::placeholders::_1));
-        _server.SetMessageCallBack(std::bind(&HttpServer::OnMessage,this,std::placeholders::_1,std::placeholders::_2));
+        _server.EnableInactiveRelease(timeout);
+        _server.SetConnectedCallBack(std::bind(&HttpServer::OnConnected, this, std::placeholders::_1));
+        _server.SetMessageCallBack(std::bind(&HttpServer::OnMessage, this, std::placeholders::_1, std::placeholders::_2));
     }
-    void SetGetHandler(const std::string &pattern,Handler &handler)
+    void SetGetHandler(const std::string &pattern, const Handler &handler)
     {
-        _get_route.push_back(std::make_pair(std::regex(pattern),handler));
+        _get_route.push_back(std::make_pair(std::regex(pattern), handler));
     }
-    void SetPostHandler(const std::string &pattern,Handler &handler)
+    void SetPostHandler(const std::string &pattern, const Handler &handler)
     {
-        _post_route.push_back(std::make_pair(std::regex(pattern),handler));
+        _post_route.push_back(std::make_pair(std::regex(pattern), handler));
     }
-    void SetPutHandler(const std::string &pattern,Handler &handler)
+    void SetPutHandler(const std::string &pattern, const Handler &handler)
     {
-        _put_route.push_back(std::make_pair(std::regex(pattern),handler));
+        _put_route.push_back(std::make_pair(std::regex(pattern), handler));
     }
-    void SetDeleteHandler(const std::string &pattern,Handler &handler)
+    void SetDeleteHandler(const std::string &pattern, const Handler &handler)
     {
-        _delete_route.push_back(std::make_pair(std::regex(pattern),handler));
+        _delete_route.push_back(std::make_pair(std::regex(pattern), handler));
     }
-    void SetBaseDir(std::string &path)
+    void SetBaseDir(const std::string &path)
     {
+        assert(Util::IsDirectory(path) == true);
         _basedir = path;
     }
     void SetThreadCount(int count)
